@@ -10,6 +10,10 @@ scenario families against it (plus a separate, directly-invoked `upgrade` entry 
 `GATE_KNOWN_SCENARIOS` member), and judges each run under three failure oracles (crash /
 consensus-halt / state-mismatch), recording any defect found.
 
+Upstream is `https://github.com/kyonRay/fisco-bcos-release-gate-skill`. The sibling `fisco-bcos-testing`
+skill has its own repository (`kyonRay/fisco-bcos-testing-skill`); the two share no git history,
+so never push this tree there or rebase it onto that main.
+
 This repo is normally checked out **nested inside a FISCO-BCOS source tree** at
 `.claude/skills/fisco-bcos-release-gate/` (it is its own git repo; the surrounding checkout is a
 different one), as a sibling of `fisco-bcos-testing` and `fisco-bcos-vuln-hunt` — this skill's

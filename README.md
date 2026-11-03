@@ -75,7 +75,7 @@ A Claude Code skill is a folder that Claude Code auto-discovers. Put this folder
 - **Global** (all projects) — `~/.claude/skills/fisco-bcos-release-gate/`.
 
 ```bash
-git clone <this-repo-url> fisco-bcos-release-gate
+git clone https://github.com/kyonRay/fisco-bcos-release-gate-skill.git fisco-bcos-release-gate
 
 # project-scoped:
 mkdir -p /path/to/FISCO-BCOS/.claude/skills

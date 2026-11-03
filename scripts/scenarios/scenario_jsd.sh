@@ -69,6 +69,26 @@ _jsd_verdict() {
 # IO helpers — live-chain-only.
 # ---------------------------------------------------------------------------
 
+# _jsd_pkcs8_pem <src.pem> <dst.pem> — copy an EC private key for the Java SDK, converting a
+# SEC1 "EC PRIVATE KEY" file to PKCS#8 "PRIVATE KEY" on the way. build_chain 3.18.0 generates the
+# account key with `$OPENSSL_CMD genpkey`; stock OpenSSL writes PKCS#8, but Tongsuo (the OpenSSL
+# a Keccak-less machine ends up pointing OPENSSL_CMD at) writes SEC1, and java-sdk's PEMKeyStore
+# (BouncyCastle) rejects that with "encoded key spec not recognized" -- every DMC run then dies
+# before its first transaction and the family reports a chain failure. The node binary reads both,
+# so only the Java side needs the conversion. Pure apart from the openssl call; tested in
+# tests/jsd_pem_pkcs8_test.sh.
+_jsd_pkcs8_pem() {
+    local src="$1" dst="$2"
+    if head -n1 "$src" | grep -q "BEGIN EC PRIVATE KEY"; then
+        "${OPENSSL_CMD:-openssl}" pkcs8 -topk8 -nocrypt -in "$src" -out "$dst" 2>/dev/null || {
+            echo "ERROR: scenario_jsd: could not convert $src to PKCS#8 with ${OPENSSL_CMD:-openssl}" >&2
+            return 1
+        }
+    else
+        cp "$src" "$dst"
+    fi
+}
+
 # _jsd_wire <jsd_dir> <cluster_dir> — point the demo distribution at the cluster under test:
 # SSL off (every gate profile disables RPC SSL), a single peer, and the genesis auth_admin account
 # pinned. Pinning matters for the same reason it did for the console: the SDK's default is "a
@@ -105,6 +125,8 @@ _jsd_wire() {
     [[ -d "$node_dir/sdk" ]] && cp -r "$node_dir/sdk"/* "$jsd_dir/conf/" 2>/dev/null
     mkdir -p "$jsd_dir/account/ecdsa"
     cp -r "$accounts_dir"/* "$jsd_dir/account/ecdsa/"
+    # The governor's private key in the form the Java SDK reads (see _jsd_pkcs8_pem).
+    _jsd_pkcs8_pem "$accounts_dir/$gov.pem" "$jsd_dir/account/ecdsa/$gov.pem" || return 1
 
     PORT="$port" ADDR="$gov" perl -0pi -e '
         s{disableSsl\s*=\s*"false"}{disableSsl = "true"};

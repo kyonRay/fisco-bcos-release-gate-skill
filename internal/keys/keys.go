@@ -49,7 +49,7 @@ type Row struct {
 // KnownCommands is the vocabulary `config show --command` and `doctor --command` accept. A name
 // outside it is a usage error rather than a filter that silently matches nothing.
 func KnownCommands() []string {
-	return []string{"case", "cluster", "config", "doctor", "fuzz", "gate", "profile"}
+	return []string{"case", "cluster", "config", "doctor", "fuzz", "gate", "profile", "upgrade"}
 }
 
 func IsKnownCommand(cmd string) bool {
@@ -182,7 +182,7 @@ var table = []Row{
 	{Key: "tools.web3_private_key", Env: []string{"WEB3_PRIVATE_KEY"}, Type: KindString, Secret: true, Commands: []string{"gate"}},
 
 	// ---- upgrade ----
-	{Key: "upgrade.rollback", Env: []string{"UPGRADE_ROLLBACK"}, Type: KindBool, Commands: []string{"gate"}},
+	{Key: "upgrade.rollback", Env: []string{"UPGRADE_ROLLBACK"}, Type: KindBool, Commands: []string{"upgrade"}},
 
 	// ---- host-only run controls (spec §7.7): typed here so `run.timeout_sec: abc` is rejected
 	// with the same rigour as `fuzz.batch: abc`.

@@ -66,7 +66,7 @@ the axis they mention ("国密" → `sm-gov`, "老链升级" → `upgrade-legacy
 `production-enterprise` as the default anchor when nothing narrows it down.
 
 **Maintenance is manual, not automated.** `production-enterprise` must be hand-re-captured
-(`listSystemConfigs` via console + the node's `config.ini`) whenever the real production chain's
+(`fisco-bcos sysconfig features` / `sysconfig get` against a production node + its `config.ini`) whenever the real production chain's
 config drifts; the other 5 archetypes need hand-updates when a new feature/consensus/storage
 option appears in the codebase that they should represent. There is no drift-detection step —
 treat a stale profile as a known, accepted cost (see the profile's own `[meta] captured_at`).
@@ -87,8 +87,11 @@ Real-run, 4 steps:
    `web3_rpc.listen_port`).
 2. Patches each node's `config.ini` per `[config_ini_override]`.
 3. `stop_all.sh` + `start_all.sh` so the `config.ini` patch takes effect.
-4. Replays every `[system_config_replay]` pair, one `console.sh setSystemConfigByKey <key>
-   <value>` call at a time.
+4. Replays every `[system_config_replay]` pair with the node binary's own `sysconfig set <key>
+   <value>` (signed as the genesis admin key under `<outdir>/ca/accounts`; a committee proposal on
+   a governance chain, routed by the binary), then reads each value back with `sysconfig get` and
+   refuses to report the cluster ready if it differs. `scripts/ops_lib.sh` is the one place these
+   subcommands are invoked from; no Java console is involved anywhere in the engine.
 
 `--dry-run` prints the resolved plan (the `build_chain` invocation, the `config.ini` patch lines,
 the `setSystemConfigByKey` lines) with no chain touched — use it to sanity-check a profile before
@@ -116,7 +119,7 @@ Four scenario families make up `GATE_KNOWN_SCENARIOS` in `gate.sh` (each lives i
 | name | file | what it does | primary oracle |
 |---|---|---|---|
 | `ut` | `scenario_ut.sh` | runs every built module's UT binary via the sibling `fisco-bcos-testing` skill's `run_ut.sh` | crash (exit code) |
-| `dual_rpc` | `scenario_dual_rpc.sh` | deploys + calls a minimal contract through both BCOS RPC (:20200, tars/console) and Web3 RPC (:8545, curl + RLP), then compares `stateRoot` across both paths | state-mismatch + result assertions |
+| `dual_rpc` | `scenario_dual_rpc.sh` | deploys + calls a minimal contract through both BCOS RPC (:20200, the binary's `tx smoke`: HelloWorld deploy/set/get) and Web3 RPC (:8545, curl + RLP), then compares `stateRoot` across both paths | state-mismatch + result assertions |
 | `malformed` | `scenario_malformed.sh` | byte-tampers a signed tx, injects it, asserts a *clean* rejection rather than a crash masquerading as one | crash (false-green guard) |
 | `jsd` | `scenario_jsd.sh` | drives real parallel load through java-sdk-demo's three DMC transfer shapes, DAG on and off, and checks each run's balance-conservation assertion | state-mismatch (balance sum) + crash |
 | `upgrade` † | `scenario_upgrade.sh` | replays the T0–T8 version-upgrade timeline: rolling binary swap, `compatibility_version` bump, bugfix-flag flip assertion | all three |
@@ -138,16 +141,14 @@ exploration layer attaches):
   `malformed` at full depth, `upgrade` run at that profile's own compat version, no exploration
   layer attached.
 
-**`upgrade` needs a console built against java-sdk `release-3.9.0`.** Once a profile enables
-`auth_check_status`, the version bump can only go through a committee proposal, and java-sdk 3.8.0's
-`AuthManager.createSetSysConfigProposal` rejects every version string it is given — its
-`EnumNodeVersion` stops at 3.7.0, so 3.16.4, 3.17.0 and even its own 3.8.0 all come back
-"please check valid range". Branch `release-3.9.0` replaced that with a check against the version
-the chain itself reports. Build it (`git clone -b release-3.9.0 …/java-sdk && bash gradlew jar`,
-JDK 8) and drop `fisco-bcos-java-sdk-3.9.0-SNAPSHOT.jar` into the console's `lib/` — also replace
-the console's jackson 2.14 jars with the 2.20 ones from the SDK's own `dist/lib`, or the client
-dies at startup with `NoSuchFieldError: REQUIRE_HANDLERS_FOR_JAVA8_OPTIONALS`. With that in place a
-single governor at 0% thresholds makes the proposal execute immediately, and the bugfix flags flip.
+**`upgrade` drives the chain with the NEW binary's subcommands for the whole timeline.** The T0
+chain runs `old_bin`, which (3.17 and earlier) has no subcommands, so `scenario_upgrade.sh` exports
+`OPS_BIN=<new_bin>`: T0's profile replay and T1's flag snapshot reach the old chain over plain
+JSON-RPC (`--node-dir` falls back to the RPC port when the node has no local socket), and after
+the T2-T4 swap the same binary talks to its own kind. Once a profile enables `auth_check_status`,
+`sysconfig set compatibility_version` becomes a committee proposal — the binary routes that itself
+(bcos-ops `TxContext.cpp`); a single governor at 0% thresholds executes it immediately, and T5
+reads the version back rather than trusting the proposal's `ok`.
 
 **`jsd` needs `JSD_DIR` and fails without it — on purpose.** It runs java-sdk-demo's DMC transfer
 demos, so it needs a built distribution: point `JSD_DIR` at a directory holding `apps/ conf/ lib/`
@@ -285,6 +286,7 @@ At the end of a gate round (or an exploration session), assemble:
 | `scripts/apply_profile.sh` | replay a captured `.profile` onto a local AIR cluster |
 | `scripts/gate.sh` | the deterministic-gate orchestrator: bring up cluster, run scenarios, judge oracles |
 | `scripts/profile_lib.sh` | `.profile` parser (`profile_load` → `PROFILE_*` arrays) |
+| `scripts/ops_lib.sh` | the engine's only way of driving a chain: the node binary's own `sysconfig` / `balance` / `tx` subcommands (`OPS_BIN`, default `FISCO_BIN`), plus the JSON parsing they need |
 | `scripts/oracle_lib.sh` / `oracle_crash.sh` / `oracle_liveness.sh` / `oracle_stateroot.sh` | the three failure oracles |
 | `scripts/run_case.sh` | replay one `scenarios/*.case` regression fixture |
 | `scripts/failures_lib.sh` / `report_defects.sh` | local defect sink + Tencent smartsheet sync (报告) |

@@ -120,4 +120,9 @@ live chain required — the live-chain IO paths in each script are exercised onl
   `scenario_upgrade.sh` and its siblings do. This does not extend to every sourced file: library
   files that are always sourced into an already-`set -euo pipefail` caller, like `profile_lib.sh`
   and `oracle_lib.sh`, keep `set -euo pipefail` at their own file scope too — check a given file's
-  actual header before assuming either convention.
+  actual header before assuming either convention. `ops_lib.sh` follows the scenario rule (no
+  options at file scope) because the scenario files source it from inside their run functions.
+- **The chain is driven only through the node binary's own subcommands.** Every write or read the
+  engine needs (`sysconfig set/get`, `balance add`, `tx smoke`, bcos-ops / ADR 0009) goes through
+  `scripts/ops_lib.sh`; do not reintroduce the Java console, a cpp-sdk client, or a second JSON
+  parser. The binary under test is therefore 3.18.0 or newer, and `doctor` checks that up front.

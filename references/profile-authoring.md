@@ -65,10 +65,12 @@ section).
 
 These are flags that were turned on **live**, after genesis, via `setSystemConfigByKey` — not
 genesis constants (see SKILL.md's apply_profile 回放: "production feature flags are turned on
-live... not creation-time genesis constants"). Capture them from the console:
+live... not creation-time genesis constants"). Capture them with the node binary's own
+subcommands, from the production node's directory (3.18.0+):
 
 ```
-[group0]: /apps> listSystemConfigs
+./fisco-bcos sysconfig features --node-dir . --json     # every feature_/bugfix_ flag and its state
+./fisco-bcos sysconfig get tx_gas_price --node-dir .    # one plain key at a time
 ```
 
 This dumps `Config | Value | Enable Block` for every known key. For each row where `Value` is

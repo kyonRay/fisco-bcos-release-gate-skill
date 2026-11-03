@@ -62,7 +62,9 @@ think to test, delegating attack mechanics to the sibling `fisco-bcos-testing` a
 - **bash 4+** — every script checks `BASH_VERSINFO[0]` up front and fails with an explicit
   message on stock macOS bash 3.2 (`declare -gA` needs 4+). `brew install bash` first on macOS.
 - **For live gate runs**: a compiled `fisco-bcos` binary, plus whatever the delegated
-  `fisco-bcos-testing` scenarios need (Node.js for Web3 RPC, JDK 11+ for the console).
+  `fisco-bcos-testing` scenarios need (Node.js for Web3 RPC; a JDK only for the `malformed`
+  tamper helper and the `jsd` driver). The binary under test must be 3.18.0 or newer: the engine
+  drives the chain through its own `sysconfig` / `balance` / `tx` subcommands, not a Java console.
 
 ---
 
@@ -125,6 +127,7 @@ fisco-bcos-release-gate/
 │   ├── apply_profile.sh                  replay a captured .profile onto a local AIR cluster
 │   ├── gate.sh                           orchestrator: bring up cluster, run scenarios, judge oracles
 │   ├── profile_lib.sh                    .profile parser (profile_load -> PROFILE_* arrays)
+│   ├── ops_lib.sh                        drive the chain via the node binary's own subcommands (OPS_BIN); JSON helpers
 │   ├── oracle_lib.sh                     pure decision functions (liveness/fork/stateroot)
 │   ├── oracle_crash.sh                   crash oracle: dead PID / core dump + RPC hang probe
 │   ├── oracle_liveness.sh                consensus-halt oracle: block-height stall detection

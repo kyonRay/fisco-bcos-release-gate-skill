@@ -2,6 +2,7 @@ package config
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
@@ -170,7 +171,19 @@ func (r Resolved) EngineValues() map[string]string {
 		if !ok || len(row.Env) == 0 {
 			continue
 		}
-		out[k] = v.S
+		s := v.S
+		// The engine tests its booleans with `== 1` (scenario_upgrade.sh's UPGRADE_ROLLBACK,
+		// fuzz_bcos.sh's RG_FUZZ_CONTINUE). A YAML `true` arrived as the string "true" and was a
+		// silent SKIP.
+		if row.Type == keys.KindBool {
+			if b, err := strconv.ParseBool(s); err == nil {
+				s = "0"
+				if b {
+					s = "1"
+				}
+			}
+		}
+		out[k] = s
 	}
 	return out
 }

@@ -15,6 +15,7 @@ type fakeProbe struct {
 	files   map[string]bool
 	bash    int
 	modules map[string]bool
+	subcmd  map[string]bool
 }
 
 func (f fakeProbe) LookPath(exe string) bool { return f.path[exe] }
@@ -22,6 +23,7 @@ func (f fakeProbe) Exists(p string) bool     { return f.files[p] }
 func (f fakeProbe) BashMajor() int           { return f.bash }
 
 func (f fakeProbe) NodeModule(_, name string) bool { return f.modules[name] }
+func (f fakeProbe) Subcommands(path string) bool   { return f.subcmd[path] }
 
 func everything() fakeProbe {
 	return fakeProbe{
@@ -29,6 +31,7 @@ func everything() fakeProbe {
 		files:   map[string]bool{},
 		bash:    5,
 		modules: map[string]bool{"viem": true},
+		subcmd:  map[string]bool{},
 	}
 }
 
@@ -37,7 +40,6 @@ func fullConfig(p fakeProbe) (map[string]string, fakeProbe) {
 	cfg := map[string]string{
 		"repo.root":              "/repo",
 		"tools.fisco_bin":        "/repo/fisco-bcos",
-		"tools.console_dir":      "/console",
 		"tools.java_bin":         "/usr/bin/java",
 		"tools.tamper_helper":    "/tools/tamper.sh",
 		"tools.web3_private_key": "0xdeadbeef",
@@ -49,6 +51,7 @@ func fullConfig(p fakeProbe) (map[string]string, fakeProbe) {
 			p.files[v] = true
 		}
 	}
+	p.subcmd["/repo/fisco-bcos"] = true
 	return cfg, p
 }
 
@@ -156,7 +159,7 @@ func TestFuzzDoesNotDemandTheCheckoutOrConsole(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range plan {
-		if r.ConfigKey == "repo.root" || r.ConfigKey == "tools.console_dir" {
+		if r.ConfigKey == "repo.root" || r.Kind == KindSubcommands {
 			t.Errorf("fuzz demands %s", r.ConfigKey)
 		}
 	}
@@ -269,16 +272,15 @@ func TestBashVersionParsing(t *testing.T) {
 	}
 }
 
-// Several built-in defaults are RELATIVE -- tools.console_dir is "console/dist", mirroring the
-// engine's own ${CONSOLE_DIR:-console/dist} -- and the engine resolves those against ITS working
-// directory, the FISCO checkout. Checking them against the host's cwd reports "console/dist does
-// not exist" on a machine where the engine would find it immediately: a false red that refuses a
-// perfectly good run.
+// A RELATIVE path value is resolved against the ENGINE's working directory, the FISCO checkout
+// (the engine's own defaults used to include one, console/dist). Checking it against the host's
+// cwd reports "does not exist" on a machine where the engine would find it immediately: a false
+// red that refuses a perfectly good run.
 func TestRelativePathsResolveAgainstTheEnginesWorkingDirectory(t *testing.T) {
-	plan := []Requirement{{Name: "console", Kind: KindPath, ConfigKey: "tools.console_dir", Why: "w"}}
-	cfg := map[string]string{"tools.console_dir": "console/dist"}
+	plan := []Requirement{{Name: "tamper-helper", Kind: KindPath, ConfigKey: "tools.tamper_helper", Why: "w"}}
+	cfg := map[string]string{"tools.tamper_helper": "tools/tamper-helper.sh"}
 	p := everything()
-	p.files["/repo/console/dist"] = true // it exists where the ENGINE will look
+	p.files["/repo/tools/tamper-helper.sh"] = true // it exists where the ENGINE will look
 
 	if _, err := CheckIn("/repo", plan, cfg, p); err != nil {
 		t.Errorf("a relative default was checked against the wrong base: %v", err)
@@ -288,8 +290,8 @@ func TestRelativePathsResolveAgainstTheEnginesWorkingDirectory(t *testing.T) {
 		t.Error("a path missing under the engine's cwd was accepted")
 	}
 	// An absolute value is never rebased.
-	abs := map[string]string{"tools.console_dir": "/opt/console"}
-	p.files["/opt/console"] = true
+	abs := map[string]string{"tools.tamper_helper": "/opt/tamper-helper.sh"}
+	p.files["/opt/tamper-helper.sh"] = true
 	if _, err := CheckIn("/repo", plan, abs, p); err != nil {
 		t.Errorf("an absolute path was rebased: %v", err)
 	}

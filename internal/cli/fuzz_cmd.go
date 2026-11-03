@@ -160,7 +160,7 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 		if err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
-		if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, rt.Values, doctor.OSProbe{}); err != nil {
+		if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, withOpsBin(rt.Values, newBin), doctor.OSProbe{}); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
 		if err := rt.begin(map[string]interface{}{"command": "upgrade", "target_ver": targetVer}); err != nil {
@@ -173,10 +173,23 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 		Script:   "gate_upgrade.sh",
 		Args:     upArgs,
 		Requires: []string{"upgrade"},
-		Config:   rt.engineConfig(),
+		Config:   withOpsBin(rt.engineConfig(), newBin),
 		Timeout:  rt.timeout(),
 	})
 	return finishRun(rt, res, "upgrade", stdout, stderr, o)
+}
+
+// withOpsBin returns a copy of values with tools.ops_bin set to the release candidate. The T0
+// chain runs the OLD binary, which (3.17 and earlier) has no subcommands, so the new binary's
+// subcommands must drive the whole timeline; the scenario defaults OPS_BIN the same way, but the
+// doctor has to check the binary that will actually be used.
+func withOpsBin(values map[string]string, newBin string) map[string]string {
+	out := make(map[string]string, len(values)+1)
+	for k, v := range values {
+		out[k] = v
+	}
+	out["tools.ops_bin"] = newBin
+	return out
 }
 
 // finishRun closes the run and renders the result. It is shared so the two commands cannot drift

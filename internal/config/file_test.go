@@ -91,22 +91,22 @@ func TestValuesAreValidatedAgainstTheRegistry(t *testing.T) {
 // committed beside a project works no matter where fbt is invoked from.
 func TestRelativePathsResolveAgainstTheYAMLDirectory(t *testing.T) {
 	dir := t.TempDir()
-	got, err := LoadFile(yamlAt(t, dir, "tools:\n  console_dir: ./console\n"), false)
+	got, err := LoadFile(yamlAt(t, dir, "tools:\n  ops_bin: ./console\n"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := filepath.Join(dir, "console"); got["tools.console_dir"] != want {
-		t.Errorf("tools.console_dir = %q, want %q", got["tools.console_dir"], want)
+	if want := filepath.Join(dir, "console"); got["tools.ops_bin"] != want {
+		t.Errorf("tools.ops_bin = %q, want %q", got["tools.ops_bin"], want)
 	}
 }
 
 func TestAbsolutePathsAndNonPathValuesAreLeftAlone(t *testing.T) {
 	got, err := LoadFile(yamlAt(t, t.TempDir(),
-		"tools:\n  console_dir: /opt/console\ncluster:\n  group_id: group0\n"), false)
+		"tools:\n  ops_bin: /opt/console\ncluster:\n  group_id: group0\n"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["tools.console_dir"] != "/opt/console" || got["cluster.group_id"] != "group0" {
+	if got["tools.ops_bin"] != "/opt/console" || got["cluster.group_id"] != "group0" {
 		t.Errorf("got %+v", got)
 	}
 }

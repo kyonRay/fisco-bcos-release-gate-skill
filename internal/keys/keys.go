@@ -119,7 +119,6 @@ var table = []Row{
 	// ---- cluster ----
 	{Key: "cluster.bcos_base_port", Env: []string{"BCOS_RPC_BASE_PORT"}, Type: KindInt, Min: intp(1), Max: intp(65535), Commands: []string{"cluster", "doctor", "gate"}},
 	{Key: "cluster.bcos_rpc_url", Env: []string{"BCOS_RPC_URL"}, Type: KindString, Commands: []string{"case", "fuzz", "gate"}},
-	{Key: "cluster.contract_name", Env: []string{"BCOS_CONTRACT_NAME"}, Type: KindString, Commands: []string{"gate"}},
 	{Key: "cluster.fund_addresses", Env: []string{"RG_FUND_ADDRESSES"}, Type: KindString, Commands: []string{"cluster"}},
 	{Key: "cluster.fund_amount", Env: []string{"RG_FUND_AMOUNT"}, Type: KindString, Commands: []string{"cluster"}},
 	{Key: "cluster.group_id", Env: []string{"BCOS_GROUP_ID"}, Type: KindString},
@@ -173,10 +172,14 @@ var table = []Row{
 	// ---- repo / tools ----
 	{Key: "repo.root", Env: []string{"FBT_REPO_ROOT"}, Type: KindPath},
 	{Key: "tools.build_dir", Env: []string{"BUILD_DIR"}, Type: KindPath, Commands: []string{"cluster", "doctor"}},
-	{Key: "tools.console_dir", Env: []string{"CONSOLE_DIR"}, Type: KindPath, Commands: []string{"gate"}},
+	// The chain is driven through the node binary's own subcommands (ops_lib.sh). tools.ops_bin is
+	// the binary that provides them; the engine defaults it to tools.fisco_bin, and only the upgrade
+	// command sets it apart (its T0 chain runs an old binary without subcommands).
+	{Key: "tools.ops_bin", Env: []string{"OPS_BIN"}, Type: KindPath, Commands: []string{"case", "cluster", "gate", "upgrade"}},
+	{Key: "tools.ops_timeout_ms", Env: []string{"OPS_TIMEOUT_MS"}, Type: KindInt, Min: intp(1000), Commands: []string{"case", "cluster", "gate", "upgrade"}},
 	{Key: "tools.fisco_bin", Env: []string{"FISCO_BIN"}, Type: KindPath, Commands: []string{"cluster", "doctor", "gate"}},
 	{Key: "tools.fuzz_jar", Env: []string{"FUZZ_JAR"}, Legacy: []string{"TAMPER_FUZZ_JAR"}, Type: KindPath, Commands: []string{"fuzz", "gate"}},
-	{Key: "tools.java_bin", Env: []string{"JAVA_BIN"}, Type: KindPath, Commands: []string{"fuzz", "gate"}},
+	{Key: "tools.java_bin", Env: []string{"JAVA_BIN"}, Type: KindPath, Commands: []string{"fuzz", "gate"}}, // tamper helper, fuzz driver, JSD: the console is gone
 	{Key: "tools.tamper_block_limit", Env: []string{"TAMPER_BLOCK_LIMIT"}, Type: KindInt, Min: intp(0), Commands: []string{"gate"}},
 	{Key: "tools.tamper_helper", Env: []string{"TAMPER_HELPER"}, Type: KindPath, Commands: []string{"gate"}},
 	{Key: "tools.web3_private_key", Env: []string{"WEB3_PRIVATE_KEY"}, Type: KindString, Secret: true, Commands: []string{"gate"}},

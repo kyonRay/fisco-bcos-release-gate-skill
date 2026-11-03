@@ -46,8 +46,13 @@ func gateFixture(t *testing.T, gateBody, caseBody string) (testinstall.Install, 
 			t.Fatal(err)
 		}
 	}
-	for _, f := range []string{"repo/fisco-bcos", "tools/tamper.sh"} {
-		if err := os.WriteFile(filepath.Join(ti.Root, f), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	// The binary stub answers `help` the way a 3.18.0 fisco-bcos does, so the doctor's subcommand
+	// probe passes; the tamper stub is only ever checked for existence.
+	for f, body := range map[string]string{
+		"repo/fisco-bcos": "#!/bin/sh\n[ \"$1\" = help ] && echo 'subcommands:'\nexit 0\n",
+		"tools/tamper.sh": "#!/bin/sh\n",
+	} {
+		if err := os.WriteFile(filepath.Join(ti.Root, f), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -73,7 +78,6 @@ func gateFixture(t *testing.T, gateBody, caseBody string) (testinstall.Install, 
 	cfg := ti.WriteConfig(t, "repo:\n  root: "+filepath.Join(ti.Root, "repo")+"\n"+
 		"tools:\n"+
 		"  fisco_bin: "+filepath.Join(ti.Root, "repo/fisco-bcos")+"\n"+
-		"  console_dir: "+filepath.Join(ti.Root, "console")+"\n"+
 		"  java_bin: "+java+"\n"+
 		"  tamper_helper: "+filepath.Join(ti.Root, "tools/tamper.sh")+"\n"+
 		"  build_dir: "+filepath.Join(ti.Root, "build")+"\n"+

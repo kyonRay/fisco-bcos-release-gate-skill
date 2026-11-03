@@ -207,7 +207,6 @@ func Defaults() map[string]string {
 		// cluster
 		"cluster.bcos_base_port": "20200",
 		"cluster.bcos_rpc_url":   "http://127.0.0.1:20200",
-		"cluster.contract_name":  "HelloWorld",
 		"cluster.fund_amount":    "1000000000000000000",
 		"cluster.group_id":       "group0",
 		"cluster.node_dir":       "./nodes-release-gate/127.0.0.1",
@@ -234,8 +233,8 @@ func Defaults() map[string]string {
 		"oracle.stall_sec":       "30",
 
 		// tools
-		"tools.console_dir": "console/dist",
-		"tools.java_bin":    "java",
+		"tools.java_bin":       "java",
+		"tools.ops_timeout_ms": "60000",
 
 		// upgrade
 		"upgrade.rollback": "0",

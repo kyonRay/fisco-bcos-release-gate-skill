@@ -162,7 +162,7 @@ func TestValidateRejectsBadTypesEnumsAndRanges(t *testing.T) {
 		{"fuzz.transport", "web3method"},
 		{"fuzz.strategy", "both"},
 		{"cluster.web3_base_port", "9545"},
-		{"tools.console_dir", "/anything/goes"},
+		{"tools.ops_bin", "/anything/goes"},
 		{"run.timeout_sec", "600"},
 		{"fuzz.seed", "-5"},
 	} {
@@ -214,7 +214,7 @@ func TestTableIsWellFormedAndSorted(t *testing.T) {
 func TestSpecMandatedKeysExist(t *testing.T) {
 	for _, k := range []string{
 		"repo.root", "cluster.node_count", "cluster.p2p_base_port", "crypto.sm_mode",
-		"tools.tamper_block_limit", "cluster.contract_name",
+		"tools.tamper_block_limit",
 		"fuzz.profile_path", "fuzz.profile_name",
 		"engine.scripts_dir", "engine.profile_dir", "engine.state_cases",
 	} {

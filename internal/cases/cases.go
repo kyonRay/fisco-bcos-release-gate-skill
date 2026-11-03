@@ -263,6 +263,44 @@ func Sweep(all []Case) []Case {
 	return out
 }
 
+// Select is spec §6.2's second column: the active cases a round sweeps, narrowed to a basename
+// glob when one was given. `fuzz_*` selects every fuzz-distilled fixture; the match is
+// filepath.Match against the file's basename, so a pattern never reaches outside the two case
+// directories. A glob that matches no ACTIVE case is a usage error (spec §6.2: empty match → 20):
+// the operator asked for something this round cannot run, and a silently empty sweep in its place
+// would be a green round that tested nothing. Pending and example fixtures that matched are named
+// in the message, since "my pattern is right but the case is pending" is the usual reason.
+func Select(all []Case, glob string) ([]Case, error) {
+	if glob == "" {
+		return Sweep(all), nil
+	}
+	var out []Case
+	var inactive []string
+	for _, c := range all {
+		ok, err := filepath.Match(glob, c.Name)
+		if err != nil {
+			return nil, fbterr.Configf("--cases %q is not a valid pattern: %v", glob, err)
+		}
+		if !ok {
+			continue
+		}
+		if c.Sweepable() {
+			out = append(out, c)
+		} else {
+			inactive = append(inactive, c.Name+" ("+string(c.Status)+")")
+		}
+	}
+	if len(out) == 0 {
+		if len(inactive) > 0 {
+			return nil, fbterr.Configf("--cases %s matches no active case; it matched only %s, "+
+				"which a gate round never sweeps (spec §6.4)", glob, strings.Join(inactive, ", "))
+		}
+		return nil, fbterr.Configf("--cases %s matches no case; `fbt case list --status all` "+
+			"shows what is installed", glob)
+	}
+	return out, nil
+}
+
 // Find resolves a case named on the command line: a basename, with or without the .case suffix, or
 // a path to a file.
 func (r Registry) Find(name string) (Case, error) {

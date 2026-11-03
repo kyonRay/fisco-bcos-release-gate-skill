@@ -45,9 +45,9 @@ func gateCommand(ctx context.Context, o GlobalOptions, args []string, stdout, st
 type gateOptions struct {
 	profile   string
 	scenarios string
+	cases     string
 	failFast  bool
 	parallel  bool
-	skipCases bool
 	// withFuzz is spec §6.3's reserved flag. It exists so the name is CLAIMED and using it is an
 	// explicit refusal rather than "flag provided but not defined", which reads like a typo.
 	withFuzz bool
@@ -59,9 +59,66 @@ func (g *gateOptions) bind(fs *flag.FlagSet) {
 	fs.BoolVar(&g.failFast, "fail-fast", false, "stop at the first gate failure too")
 	fs.BoolVar(&g.parallel, "allow-parallel", false,
 		"allow a second cluster, if its port ranges do not overlap")
-	fs.BoolVar(&g.skipCases, "no-cases", false, "run the scenarios only, skip the .case sweep")
+	fs.StringVar(&g.cases, "cases", "",
+		"basename glob of the .case fixtures to replay (default: every active one)")
 	fs.BoolVar(&g.withFuzz, "with-fuzz", false,
 		"reserved: fold a fuzz pass into the round (not implemented, returns 20)")
+}
+
+// roundPlan is what one invocation will actually do, after spec §6.2's filter table has been
+// applied to the two stages.
+type roundPlan struct {
+	// scenarios is the explicit --scenarios list; empty with allScenarios set means "all four",
+	// empty without it means the scenario stage does not run at all.
+	scenarios    []string
+	allScenarios bool
+	sweep        []cases.Case
+}
+
+// round applies spec §6.2: no filter means both stages in full; naming either stage means the
+// OTHER stage is empty. `--scenarios malformed` is a request for malformed and nothing else, not
+// for malformed plus every fixture -- the sweep used to run anyway, so a round that was asked for
+// one family still built a chain per active case afterwards.
+func (g gateOptions) round(all []cases.Case) (roundPlan, error) {
+	sel := splitList(g.scenarios)
+	switch {
+	case len(sel) == 0 && g.cases == "":
+		return roundPlan{allScenarios: true, sweep: cases.Sweep(all)}, nil
+	case g.cases == "":
+		return roundPlan{scenarios: sel}, nil
+	}
+	sweep, err := cases.Select(all, g.cases)
+	if err != nil {
+		return roundPlan{}, err
+	}
+	return roundPlan{scenarios: sel, sweep: sweep}, nil
+}
+
+func (r roundPlan) runsScenarios() bool { return r.allScenarios || len(r.scenarios) > 0 }
+
+// skipReason explains, for the plan, why a fixture is not in this round's sweep.
+func (r roundPlan) skipReason(g gateOptions, c cases.Case) string {
+	switch {
+	case c.Status == cases.StatusPending:
+		return "pending: the defect is not fixed, so a sweep would be permanently red"
+	case c.Status == cases.StatusExample:
+		return "example: a format demonstration, never swept"
+	case g.cases != "":
+		return "not matched by --cases " + g.cases
+	case !r.allScenarios:
+		return "not selected: --scenarios names the whole round (spec §6.2)"
+	}
+	return ""
+}
+
+// refuseWithFuzz is spec §6.3's reserved flag. It is checked before anything is resolved so that
+// the refusal is what the operator sees, not a profile or config error that happens to come first.
+func refuseWithFuzz(g gateOptions) error {
+	if !g.withFuzz {
+		return nil
+	}
+	return fbterr.Configf("--with-fuzz is reserved and not implemented; run the fuzz pass " +
+		"separately with `fbt cluster up` followed by `fbt fuzz run --attach <run-id>`")
 }
 
 // GateDoc is spec §8's success document. UI and CI build against this shape.
@@ -102,36 +159,38 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	if err := finish(); err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
+	if err := refuseWithFuzz(g); err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
 	rt, err := newRuntime(o, g.profile, stdout, stderr)
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	if g.withFuzz {
-		return emitError(stdout, stderr, o.Output, fbterr.Configf(
-			"--with-fuzz is reserved and not implemented; run the fuzz pass separately with "+
-				"`fbt cluster up` followed by `fbt fuzz run --attach <run-id>`"))
-	}
-	selected := splitList(g.scenarios)
 
 	// 1. Everything that can be refused without side effects, refused first. Each of these leaves
 	// nothing behind, and every one of them AFTER a cluster is up would strand it.
-	plan, err := doctor.Plan("gate", selected)
-	if err != nil {
-		return emitError(stdout, stderr, o.Output, err)
-	}
-	if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, rt.Values, doctor.OSProbe{}); err != nil {
-		return emitError(stdout, stderr, o.Output, err)
-	}
+	//
 	// Every .case parses before anything starts, so one typo is a message rather than a failure
 	// discovered with a chain already running (spec §6.4).
 	allCases, err := rt.Cases.List()
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	sweep := cases.Sweep(allCases)
-	if g.skipCases {
-		sweep = nil
+	round, err := g.round(allCases)
+	if err != nil {
+		return emitError(stdout, stderr, o.Output, err)
 	}
+	// A round that runs no scenario family needs what a case replay needs, not Viem and the UT
+	// binaries: checking dependencies of work that was not selected is how a tool refuses to run
+	// for reasons that have nothing to do with the request.
+	plan, err := roundDeps(round)
+	if err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
+	if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, rt.Values, doctor.OSProbe{}); err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
+	selected, sweep := round.scenarios, round.sweep
 	ports, err := derivePorts(rt.Values)
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
@@ -165,18 +224,22 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 
 	doc := GateDoc{RunID: rt.Norm.RunID, Workspace: rt.Workspace.Root, Profile: g.profile}
 
-	// 3. Stage one: the scenario families.
-	gateArgs := []string{"-p", rt.ProfilePath, "-o", rt.Workspace.Cluster}
-	if len(selected) > 0 {
-		gateArgs = append(gateArgs, "--scenarios", strings.Join(selected, ","))
+	// 3. Stage one: the scenario families. Skipped entirely when the round is cases-only
+	// (spec §6.2): gate.sh would build a chain to run nothing on.
+	var first execution.Result
+	if round.runsScenarios() {
+		gateArgs := []string{"-p", rt.ProfilePath, "-o", rt.Workspace.Cluster}
+		if len(selected) > 0 {
+			gateArgs = append(gateArgs, "--scenarios", strings.Join(selected, ","))
+		}
+		first = rt.Exec.Run(ctx, execution.Command{
+			Script:   "gate.sh",
+			Args:     gateArgs,
+			Requires: []string{"gate"},
+			Config:   rt.engineConfig(),
+			Timeout:  rt.timeout(),
+		})
 	}
-	first := rt.Exec.Run(ctx, execution.Command{
-		Script:   "gate.sh",
-		Args:     gateArgs,
-		Requires: []string{"gate"},
-		Config:   rt.engineConfig(),
-		Timeout:  rt.timeout(),
-	})
 
 	// 4. Stage two: the .case sweep, subject to the continue policy.
 	for _, c := range sweep {
@@ -213,6 +276,15 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		return rt.fail(stdout, stderr, o.Output, err)
 	}
 	return code
+}
+
+// roundDeps picks the dependency table for what the round actually runs: the gate table narrowed
+// to the selected families when any family runs, the case table otherwise.
+func roundDeps(r roundPlan) ([]doctor.Requirement, error) {
+	if r.runsScenarios() {
+		return doctor.Plan("gate", r.scenarios)
+	}
+	return doctor.Plan("case", nil)
 }
 
 // stopSweep implements spec §10's continue policy.
@@ -361,23 +433,30 @@ func planCommand(_ context.Context, o GlobalOptions, args []string, stdout, stde
 	if err := finish(); err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
+	if err := refuseWithFuzz(g); err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
 	rt, err := newRuntime(o, g.profile, stdout, stderr)
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
-	}
-	selected := splitList(g.scenarios)
-	if len(selected) == 0 {
-		selected = []string{"ut", "dual_rpc", "malformed", "jsd"}
 	}
 	all, err := rt.Cases.List()
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
+	round, err := g.round(all)
+	if err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
+	selected := round.scenarios
+	if round.allScenarios {
+		selected = []string{"ut", "dual_rpc", "malformed", "jsd"}
+	}
 	ports, err := derivePorts(rt.Values)
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	deps, err := doctor.Plan("gate", splitList(g.scenarios))
+	deps, err := roundDeps(round)
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
@@ -386,22 +465,25 @@ func planCommand(_ context.Context, o GlobalOptions, args []string, stdout, stde
 	for _, d := range deps {
 		doc.Deps = append(doc.Deps, d.Name)
 	}
+	swept := map[string]bool{}
+	for _, c := range round.sweep {
+		swept[c.Name] = true
+	}
 	for _, c := range all {
-		pc := planCase{Name: c.Name, Status: string(c.Status), Swept: c.Sweepable() && !g.skipCases}
-		switch {
-		case g.skipCases:
-			pc.Reason = "--no-cases"
-		case c.Status == cases.StatusPending:
-			pc.Reason = "pending: the defect is not fixed, so a sweep would be permanently red"
-		case c.Status == cases.StatusExample:
-			pc.Reason = "example: a format demonstration, never swept"
+		pc := planCase{Name: c.Name, Status: string(c.Status), Swept: swept[c.Name]}
+		if !pc.Swept {
+			pc.Reason = round.skipReason(g, c)
 		}
 		doc.Cases = append(doc.Cases, pc)
 	}
 
 	if err := render(stdout, o.Output, doc, func(w io.Writer) {
+		families := strings.Join(doc.Scenarios, ", ")
+		if families == "" {
+			families = "(none: --cases names the whole round, spec §6.2)"
+		}
 		fmt.Fprintf(w, "profile:   %s\nscenarios: %s\nports:     %s\n\n",
-			doc.Profile, strings.Join(doc.Scenarios, ", "), portList(doc.Ports))
+			doc.Profile, families, portList(doc.Ports))
 		for _, c := range doc.Cases {
 			mark := "skip"
 			if c.Swept {

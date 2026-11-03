@@ -341,21 +341,36 @@ _upg_run_oracle_triad() {
     local phase="$1" rpc_url="$2" node_dir="$3"
     shift 3
     local trc=0 height
-    bash "$SCENARIO_UPG_DIR/../oracle_crash.sh" --once "$@" || trc=1
-    bash "$SCENARIO_UPG_DIR/../oracle_liveness.sh" -r "$rpc_url" || trc=1
+    # Each check is also an oracle_check event (same vocabulary as gate.sh's run_oracles_once), so
+    # the host's report shows the timeline's T1/T7/T8 judgements rather than "nothing recorded".
+    if bash "$SCENARIO_UPG_DIR/../oracle_crash.sh" --once "$@"; then
+        emit_event oracle_check oracle crash phase "$phase" verdict pass
+    else
+        emit_event oracle_check oracle crash phase "$phase" verdict trip; trc=1
+    fi
+    if bash "$SCENARIO_UPG_DIR/../oracle_liveness.sh" -r "$rpc_url"; then
+        emit_event oracle_check oracle halt phase "$phase" verdict pass
+    else
+        emit_event oracle_check oracle halt phase "$phase" verdict trip; trc=1
+    fi
     height="$(_upg_rpc_current_height "$rpc_url")"
     if [[ -z "$height" ]]; then
         echo "ERROR: scenario_upgrade: could not read block height from $rpc_url for stateroot oracle ($phase)" >&2
+        emit_event oracle_check oracle state-mismatch phase "$phase" verdict error
         trc=1
     else
         local sr_rc=0
         _run_stateroot_oracle "$height" "$node_dir" "" || sr_rc=$?
         if [[ "$sr_rc" == 3 ]]; then
             echo "ERROR: scenario_upgrade: stateroot ($phase): <2 node RPCs discovered under $node_dir" >&2
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict error
             trc=1
         elif [[ "$sr_rc" == 1 ]]; then
             echo "FAIL: scenario_upgrade: stateroot divergence (fork) detected during $phase @ height $height" >&2
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict trip
             trc=1
+        else
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict pass
         fi
     fi
     return $trc

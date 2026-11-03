@@ -30,4 +30,10 @@ for o in crash halt state-mismatch; do
     assert_eq "1" "$(grep -c "emit_event oracle_check oracle $o phase \"\$phase\" verdict trip" scripts/gate.sh)" "$o trip emitted"
 done
 assert_eq "2" "$(grep -c 'emit_event oracle_check oracle state-mismatch phase "\$phase" verdict error' scripts/gate.sh)" "stateroot's two cannot-judge paths emit error"
+# The upgrade timeline reports the same way: one scenario_finished for the stage, oracle_check per
+# check in its T1/T7/T8 triads.
+assert_eq "1" "$(grep -c 'emit_event scenario_finished name upgrade result pass' scripts/gate_upgrade.sh)" "upgrade pass emitted"
+assert_eq "1" "$(grep -c 'emit_event scenario_finished name upgrade result fail' scripts/gate_upgrade.sh)" "upgrade fail emitted"
+assert_eq "3" "$(grep -c 'emit_event oracle_check oracle [a-z-]* phase "\$phase" verdict pass' scripts/scenarios/scenario_upgrade.sh)" "the triad emits a pass per oracle"
+assert_eq "3" "$(grep -c 'emit_event oracle_check oracle [a-z-]* phase "\$phase" verdict trip' scripts/scenarios/scenario_upgrade.sh)" "the triad emits a trip per oracle"
 assert_done

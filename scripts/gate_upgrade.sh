@@ -134,7 +134,10 @@ fi
 # A non-zero return here is the upgrade timeline's own verdict on the chain, which is a gate
 # failure -- not an engine fault. Leaving it to the exit-code fallback would report engine_error
 # and the host would raise 40 ("fbt has a bug") for a chain that genuinely broke on upgrade.
+# The timeline is one stage of the run, reported the way gate.sh reports a family, so `fbt report`
+# shows an "upgrade" row next to the T1/T7/T8 oracle checks the scenario emits.
 if (( rc == 0 )); then
+    emit_event scenario_finished name upgrade result pass
     event_set_outcome pass
     echo "GATE UPGRADE: PASS"
 elif (( rc == 2 )); then
@@ -144,6 +147,7 @@ elif (( rc == 2 )); then
     echo "GATE UPGRADE: could not run (scenario_upgrade_run returned 2)" >&2
     exit 1
 else
+    emit_event scenario_finished name upgrade result fail
     event_set_outcome gate_fail
     echo "GATE UPGRADE: FAIL (scenario_upgrade_run returned $rc)" >&2
 fi

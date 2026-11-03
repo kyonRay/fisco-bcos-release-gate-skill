@@ -6,15 +6,29 @@ cd "$(dirname "$0")/.."
 source tests/assert.sh
 source scripts/ops_lib.sh
 
+# Verbatim shape from a 3.18.0 binary: jsoncpp styled output, spaces on both sides of the colon,
+# keys sorted, arrays opening on the next line.
 PRESET='{
-  "mode": "direct",
-  "to": "0x0000000000000000000000000000000000001000",
-  "method": "setValueByKey(string,string)",
-  "ok": true,
-  "status": 0,
-  "txHash": "0xc6b6389b355db61bdaf28d2b8785f1774aa9a86cd70afd0a6d642d1300a121ce",
-  "blockNumber": 7,
-  "message": ""
+  "blockNumber" : 7,
+  "code" : 0,
+  "codeName" : "SUCCESS",
+  "decoded" : 
+  [
+    "0"
+  ],
+  "gasUsed" : "21000",
+  "message" : "",
+  "method" : "setValueByKey(string,string)",
+  "mode" : "direct",
+  "ok" : true,
+  "params" : 
+  [
+    "feature_balance",
+    "1"
+  ],
+  "status" : 0,
+  "to" : "0x0000000000000000000000000000000000001000",
+  "txHash" : "0xc6b6389b355db61bdaf28d2b8785f1774aa9a86cd70afd0a6d642d1300a121ce"
 }'
 assert_eq "true" "$(_ops_json_top "$PRESET" ok)" "top-level boolean"
 assert_eq "7" "$(_ops_json_top "$PRESET" blockNumber)" "top-level number"
@@ -37,9 +51,9 @@ assert_eq "false" "$(_ops_json_top "$REFUSED" ok)" "top-level ok is read, not th
 assert_eq "16" "$(_ops_json_top "$REFUSED" status)" "top-level status, not proposal.status"
 
 GET='{
-  "key": "tx_gas_price",
-  "value": "0x5208",
-  "enableNumber": 9
+  "enableNumber" : 9,
+  "key" : "tx_gas_price",
+  "value" : "0x5208"
 }'
 assert_eq "0x5208" "$(_ops_json_top "$GET" value)" "sysconfig get value"
 
@@ -62,11 +76,11 @@ SMOKE='{
       "detail": ""
     },
     {
-      "name": "get",
-      "ok": true,
-      "txHash": "",
-      "status": 0,
-      "detail": "Hello, FISCO BCOS"
+      "detail" : "Hello, FISCO BCOS",
+      "name" : "get",
+      "ok" : true,
+      "status" : 0,
+      "txHash" : ""
     }
   ],
   "account": "0x9f10100f6b8bda11655e59f11b0905c009b31036"

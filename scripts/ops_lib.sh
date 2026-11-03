@@ -30,8 +30,10 @@
 # IO helpers (live chain only): _ops_bin, _ops_node0, _ops_admin_pem, _ops_read, _ops_write, _ops_tx.
 
 # ---------------------------------------------------------------------------
-# Pure: parse the pretty-printed JSON the subcommands write (2-space indent, one field per line,
-# Output.cpp). No jq — same convention as the rest of the engine.
+# Pure: parse the pretty-printed JSON the subcommands write (jsoncpp styled: 2-space indent, one
+# field per line, a space on BOTH sides of the colon -- `"ok" : true` -- keys sorted, arrays and
+# objects opening on the next line). No jq — same convention as the rest of the engine. The
+# patterns accept the colon with or without the surrounding spaces.
 # ---------------------------------------------------------------------------
 
 # _ops_json_top <json> <field> — the value of a TOP-LEVEL field (indented exactly two spaces):
@@ -39,17 +41,17 @@
 _ops_json_top() {
     local json="$1" field="$2" v
     # Quoted string first (it may contain commas), then a bare number/boolean/null.
-    v="$(printf '%s\n' "$json" | sed -E -n "s/^  \"${field}\": *\"([^\"]*)\",?[[:space:]]*$/\1/p" | head -n1)"
+    v="$(printf '%s\n' "$json" | sed -E -n "s/^  \"${field}\" *: *\"([^\"]*)\",?[[:space:]]*$/\1/p" | head -n1)"
     [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
-    printf '%s\n' "$json" | sed -E -n "s/^  \"${field}\": *([^\",[:space:]]+),?[[:space:]]*$/\1/p" | head -n1
+    printf '%s\n' "$json" | sed -E -n "s/^  \"${field}\" *: *([^\",[:space:]]+),?[[:space:]]*$/\1/p" | head -n1
 }
 
 # _ops_json_any <json> <field> — the FIRST occurrence of a field at any depth.
 _ops_json_any() {
     local json="$1" field="$2" v
-    v="$(printf '%s\n' "$json" | sed -E -n "s/^[[:space:]]*\"${field}\": *\"([^\"]*)\",?[[:space:]]*$/\1/p" | head -n1)"
+    v="$(printf '%s\n' "$json" | sed -E -n "s/^[[:space:]]*\"${field}\" *: *\"([^\"]*)\",?[[:space:]]*$/\1/p" | head -n1)"
     [[ -n "$v" ]] && { printf '%s' "$v"; return 0; }
-    printf '%s\n' "$json" | sed -E -n "s/^[[:space:]]*\"${field}\": *([^\",[:space:]]+),?[[:space:]]*$/\1/p" | head -n1
+    printf '%s\n' "$json" | sed -E -n "s/^[[:space:]]*\"${field}\" *: *([^\",[:space:]]+),?[[:space:]]*$/\1/p" | head -n1
 }
 
 # _ops_ok <json> — the top-level "ok" is true. The presets (sysconfig set, balance add, …) and
@@ -60,17 +62,19 @@ _ops_ok() {
 }
 
 # _ops_smoke_step <smoke_json> <step_name> <field> — one field of the named step in `tx smoke`'s
-# steps array ({name, ok, txHash, status, detail}). Reads the lines after the matching "name"
-# until the object closes.
+# steps array ({name, ok, txHash, status, detail}). jsoncpp sorts keys, so "detail" comes BEFORE
+# "name" inside each step: the whole object is collected first and matched on close.
 _ops_smoke_step() {
     local json="$1" step="$2" field="$3"
     printf '%s\n' "$json" | awk -v step="$step" -v field="$field" '
-        $0 ~ "\"name\": *\"" step "\"" { grab = 1; next }
-        grab && $0 ~ "^[[:space:]]*}" { exit }
-        grab && $0 ~ "\"" field "\":" {
-            sub(/^[[:space:]]*"[^"]*": */, ""); sub(/,[[:space:]]*$/, ""); gsub(/^"|"$/, "")
-            print; exit
-        }'
+        /^[[:space:]]*\{/ { delete obj; inobj = 1; next }
+        inobj && /^[[:space:]]*"[^"]+" *:/ {
+            line = $0
+            sub(/^[[:space:]]*"/, "", line); key = line; sub(/".*$/, "", key)
+            sub(/^[^:]*: */, "", line); sub(/,[[:space:]]*$/, "", line); gsub(/^"|"$/, "", line)
+            obj[key] = line; next
+        }
+        inobj && /^[[:space:]]*\}/ { if (obj["name"] == step) { print obj[field]; exit } inobj = 0 }'
 }
 
 # _ops_hex40_in <text> — the first 0x<40 hex> address in the text, anchored on a word boundary so a
@@ -129,6 +133,21 @@ _ops_exec() {
 
 # _ops_read <args…> — a read (sysconfig get, status, block get, tx get): no signer, no prompt.
 _ops_read() { _ops_exec "$@"; }
+
+# _ops_wait_ready [timeout_s] — block until node0 answers a read, or fail after timeout_s (default
+# 60). A node that was just (re)started takes a few seconds to open its RPC port; the first write
+# after apply_profile.sh's restart used to land on "Connection refused" and fail the bring-up.
+_ops_wait_ready() {
+    local timeout="${1:-60}" waited=0 out
+    while (( waited < timeout )); do
+        if out="$(_ops_read sysconfig get tx_count_limit 2>/dev/null)" && [[ -n "$(_ops_json_top "$out" value)" ]]; then
+            return 0
+        fi
+        sleep 2; waited=$((waited + 2))
+    done
+    echo "ERROR: ops: $(_ops_node0) did not answer sysconfig get within ${timeout}s" >&2
+    return 1
+}
 
 # _ops_write <args…> — a governance write (sysconfig set, balance add, …): signs as the admin and
 # answers the confirmation prompt, which otherwise exits 1 when stdin is not a terminal.

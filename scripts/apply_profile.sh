@@ -304,6 +304,10 @@ _fund_accounts() {
 }
 
 echo ">> [4/4] replaying [system_config_replay] with fisco-bcos sysconfig set (needs live chain)"
+# start_all.sh returns as soon as the processes exist; the RPC port opens a few seconds later. The
+# first run on 3.18.0 sent its first write into "Connection refused" (the console's JVM start-up
+# used to hide this gap).
+_ops_wait_ready 60 || exit 1
 # Each pair is written, then READ BACK and compared. `ok` alone is not the verdict: on a governance
 # chain the write becomes a committee proposal, and the preset reports ok while the proposal is
 # still voting (bcos-ops PresetCall.cpp) -- the value on chain is the only thing that proves the

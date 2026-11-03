@@ -171,7 +171,12 @@ _upg_t0_apply_argv() {
 _upg_downgrade_refused() {
     local out="$1" readback="$2" target="$3"
     [[ "$readback" == "$target" ]] || return 1
-    grep -qE 'should not lower|"execCode": *[1-9]|"statusName": *"(failed|rejected)"' <<<"$out"
+    # Two spellings of the same refusal. SystemConfigPrecompiled's converter throws "should not
+    # lower than version nowadays", but checkValueValid (SystemConfigPrecompiled.cpp:384-394)
+    # catches it and re-throws as "The value for compatibility_version must be a valid number." --
+    # the message a 3.18.0 chain actually returns for a downgrade, through the proposal path too.
+    # A committee path that executed and reverted shows a non-zero execCode instead.
+    grep -qE 'should not lower|compatibility_version must be a valid number|"execCode" *: *[1-9]|"statusName" *: *"(failed|rejected)"' <<<"$out"
 }
 
 _upg_find_repo_root() {

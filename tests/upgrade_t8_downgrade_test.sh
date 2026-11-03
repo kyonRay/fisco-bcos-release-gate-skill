@@ -19,6 +19,17 @@ rule='{
 rc=0; _upg_downgrade_refused "$rule" 3.18.0 3.18.0 || rc=$?
 assert_eq 0 "$rc" "direct path: rule message + version unchanged -> refused (0)"
 
+# What a 3.18.0 chain really answers (checkValueValid re-wraps the lowering error): seen live.
+wrapped='{
+  "message" : "The value for compatibility_version must be a valid number.",
+  "method" : "createSetSysConfigProposal(string,string,uint256)",
+  "mode" : "proposal",
+  "ok" : false,
+  "status" : 16
+}'
+rc=0; _upg_downgrade_refused "$wrapped" 3.18.0 3.18.0 || rc=$?
+assert_eq 0 "$rc" "the precompile's re-wrapped wording of the version rule counts as the refusal (0)"
+
 prop='{
   "mode": "proposal",
   "ok": false,

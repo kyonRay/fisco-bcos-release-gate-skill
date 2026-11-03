@@ -120,10 +120,16 @@ source "$SCRIPT_DIR/scenarios/scenario_upgrade.sh"
 # first real upgrade run died before building a node. Only the PARENT has to exist.
 OUTDIR_ABS="$(cd "$(dirname "$OUTDIR")" && pwd)/$(basename "$OUTDIR")"
 
-set +e
-scenario_upgrade_run "$OUTDIR_ABS" "$OLD_BIN" "$NEW_BIN" "$TARGET_VER" "$PROFILE_ABS"
-rc=$?
-set -e
+# Called inside `if`, not under a `set +e` window: scenario_upgrade_run sources oracle_lib.sh,
+# which sets -e at file scope and so re-arms errexit in THIS shell halfway through the timeline.
+# With the plain call, a T8 FAIL (return 1) killed the script before the verdict below ran, the
+# EXIT trap reported no outcome, and the host raised 40 "fbt has a bug" for a chain that had been
+# judged. An `if` condition is exempt from errexit whatever the current options are.
+if scenario_upgrade_run "$OUTDIR_ABS" "$OLD_BIN" "$NEW_BIN" "$TARGET_VER" "$PROFILE_ABS"; then
+    rc=0
+else
+    rc=$?
+fi
 
 # A non-zero return here is the upgrade timeline's own verdict on the chain, which is a gate
 # failure -- not an engine fault. Leaving it to the exit-code fallback would report engine_error

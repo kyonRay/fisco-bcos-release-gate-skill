@@ -41,4 +41,5 @@ assert_eq 1 "$rc" "a FBT_REPO_ROOT without build_chain.sh is not taken on faith"
 assert_eq "1" "$(grep -c 'elif (( rc == 2 )); then' scripts/gate_upgrade.sh)" "gate_upgrade.sh maps a cannot-run (2) to infra_error, not gate_fail"
 assert_eq "0" "$(grep -c 'mkdir -p "\$OUTDIR"' scripts/gate_upgrade.sh)" "gate_upgrade.sh does not pre-create the -o directory build_chain will refuse"
 assert_eq "1" "$(grep -c 'export NODE_DIR="\$node_dir_root"' scripts/scenarios/scenario_upgrade.sh)" "scenario_upgrade_run points NODE_DIR at its own -o workspace (PID discovery, ops, oracles all read it)"
+assert_eq "1" "$(grep -c '^if scenario_upgrade_run ' scripts/gate_upgrade.sh)" "gate_upgrade.sh calls the timeline inside if, immune to errexit re-armed by sourced libraries"
 assert_done

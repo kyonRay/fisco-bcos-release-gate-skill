@@ -147,7 +147,11 @@ scenario_jsd_run() {
     fi
     command -v "${JAVA_BIN:-java}" >/dev/null 2>&1 || { echo "ERROR: scenario_jsd: ${JAVA_BIN:-java} not on PATH (set JAVA_BIN to a specific binary)" >&2; return 1; }
 
-    _jsd_wire "$jsd_dir" "${RG_CLUSTER_DIR:-./nodes-release-gate}" || return 1
+    # gate.sh exports RG_CLUSTER_DIR as its -o workspace; standalone, derive it from NODE_DIR the
+    # way every other family finds the chain, and fall back to gate.sh's default last.
+    local cluster_dir="${RG_CLUSTER_DIR:-}"
+    [[ -n "$cluster_dir" ]] || cluster_dir="$(dirname "${NODE_DIR:-./nodes-release-gate/127.0.0.1}")"
+    _jsd_wire "$jsd_dir" "$cluster_dir" || return 1
 
     local log="$outdir/jsd.log"
     local entry cls users dag out rc failed=0

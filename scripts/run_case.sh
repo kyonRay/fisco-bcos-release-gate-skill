@@ -233,6 +233,7 @@ bash "$APPLY_PROFILE" -p "$CASE_PROFILE" -o "$CLUSTER_OUTDIR"
 CLUSTER_OUTDIR_ABS="$(cd "$CLUSTER_OUTDIR" && pwd)"
 NODE_DIR="$CLUSTER_OUTDIR_ABS/127.0.0.1"
 export NODE_DIR   # a .case input may address the chain as "$NODE_DIR/node0" (see scenarios/README.md)
+export RG_CLUSTER_DIR="$CLUSTER_OUTDIR_ABS"   # same reason as gate.sh: the cluster is this run's -o
 
 # RPC URL: derive from node0's FINAL config.ini via _primary_web3_url — see gate.sh's own
 # comment on this (same Design Decision rev3 #2 fix: a raw PROFILE_CONFIG read misses a host

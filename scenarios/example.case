@@ -3,5 +3,5 @@
 [case]
 status = example
 profile = default-latest
-input = console.sh call HelloWorld get
+input = "${OPS_BIN:-$FISCO_BIN}" sysconfig get tx_count_limit --node-dir "$NODE_DIR/node0" --json
 expect_oracle = pass

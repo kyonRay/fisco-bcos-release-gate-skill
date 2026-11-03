@@ -22,7 +22,7 @@
 #              ${FBT_PROFILE_DIR:-<repo>/profiles}/<name>.profile), OR a path relative to this
 #              .case file's own dir, OR an absolute path>                          (required —
 #              see _run_case_resolve_profile, the single place this three-way resolution happens)
-#   input = <the command the exploration layer used to reproduce the failure — a console
+#   input = <the command the exploration layer used to reproduce the failure — a fisco-bcos
 #            invocation, a curl to the Web3 RPC, or similar>          (required)
 #   expect_oracle = pass | reject                                     (required)
 #     pass    — the input is a VALID operation. Case PASSES iff the input applied successfully
@@ -44,7 +44,7 @@
 #   2. `input` is applied verbatim via `bash -c`, with its exit status captured (not allowed to
 #      abort this script — see the `set -euo pipefail` note at the input-apply call site). GAP:
 #      run_case.sh does not validate or sandbox this command in any way — it is whatever shell
-#      command the exploration layer used against the live cluster (console.sh, curl, …), and
+#      command the exploration layer used against the live cluster (fisco-bcos subcommands, curl, …), and
 #      trusting it is a documented assumption inherited straight from the .case file's author.
 #   3. Node PIDs and the Web3 RPC URL are discovered the same way gate.sh's real-run does (see
 #      scripts/gate.sh's discovery block); the three oracles run once, one-shot, matching
@@ -232,6 +232,7 @@ bash "$APPLY_PROFILE" -p "$CASE_PROFILE" -o "$CLUSTER_OUTDIR"
 
 CLUSTER_OUTDIR_ABS="$(cd "$CLUSTER_OUTDIR" && pwd)"
 NODE_DIR="$CLUSTER_OUTDIR_ABS/127.0.0.1"
+export NODE_DIR   # a .case input may address the chain as "$NODE_DIR/node0" (see scenarios/README.md)
 
 # RPC URL: derive from node0's FINAL config.ini via _primary_web3_url — see gate.sh's own
 # comment on this (same Design Decision rev3 #2 fix: a raw PROFILE_CONFIG read misses a host

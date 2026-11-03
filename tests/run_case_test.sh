@@ -7,7 +7,7 @@ out="$(bash scripts/run_case.sh --dry-run scenarios/example.case)"
 # dry-run echoes the LOGICAL profile name verbatim (stable) — resolution to an absolute path via
 # _run_case_resolve_profile only happens in the real-run path, never here.
 assert_contains "$out" "profile: default-latest" "dry-run echoes profile"
-assert_contains "$out" "input: console.sh call HelloWorld get" "dry-run echoes input"
+assert_contains "$out" "input: \"\${OPS_BIN:-\$FISCO_BIN}\" sysconfig get tx_count_limit" "dry-run echoes input"
 assert_contains "$out" "expect_oracle: pass" "dry-run echoes expect_oracle"
 
 # 缺字段应报错非0（也验证 --dry-run 之前就完成解析校验，不用起链）
@@ -16,7 +16,7 @@ trap 'rm -f "$tmp_case"' EXIT
 cat > "$tmp_case" <<'EOF'
 [case]
 profile = profiles/default-latest.profile
-input = console.sh call HelloWorld get
+input = "${OPS_BIN:-$FISCO_BIN}" sysconfig get tx_count_limit --node-dir "$NODE_DIR/node0" --json
 EOF
 bash scripts/run_case.sh --dry-run "$tmp_case" >/dev/null 2>&1 && r=0 || r=1
 assert_eq "1" "$r" "missing expect_oracle rejected"
@@ -35,7 +35,7 @@ assert_contains "$out" "expect_oracle: reject" "dry-run echoes expect_oracle=rej
 cat > "$tmp_case" <<'EOF'
 [case]
 profile = profiles/default-latest.profile
-input = console.sh call HelloWorld get
+input = "${OPS_BIN:-$FISCO_BIN}" sysconfig get tx_count_limit --node-dir "$NODE_DIR/node0" --json
 expect_oracle = crash
 EOF
 bash scripts/run_case.sh --dry-run "$tmp_case" >/dev/null 2>&1 && r=0 || r=1

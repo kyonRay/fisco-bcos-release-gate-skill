@@ -25,7 +25,7 @@ INI-like, one `[case]` section, three required keys (`profile`/`input`/`expect_o
 [case]
 status = active
 profile = default-latest
-input = console.sh call HelloWorld get
+input = "${OPS_BIN:-$FISCO_BIN}" sysconfig get tx_count_limit --node-dir "$NODE_DIR/node0" --json
 expect_oracle = pass
 ```
 
@@ -52,8 +52,9 @@ expect_oracle = pass
   (e.g. `default-latest`), resolved to `${FBT_PROFILE_DIR:-<repo>/profiles}/<name>.profile`. This
   is the exact production config the failure was captured under; `run_case.sh` hands the resolved
   path straight to `apply_profile.sh` to reproduce that chain locally.
-- `input` — the command the exploration layer used to trigger the failure: a console
-  invocation, a curl against the Web3 RPC, a crafted transaction submission, or similar. Applied
+- `input` — the command the exploration layer used to trigger the failure: a `fisco-bcos`
+  subcommand (`run_case.sh` exports `NODE_DIR`, and the host exports `FISCO_BIN`/`OPS_BIN`), a curl
+  against the Web3 RPC, a crafted transaction submission, or similar. Applied
   verbatim via `bash -c`, with its exit status captured (never allowed to abort `run_case.sh`
   itself — a nonzero exit is exactly what `expect_oracle=reject` expects); `run_case.sh` does not
   otherwise validate or sandbox it.
@@ -126,5 +127,5 @@ ever comes back, the case starts reporting `CASE: FAIL` on its own.
 
 `scenarios/example.case` is a fixture demonstrating the format, not a captured production
 incident — `status = example` marks it as such. It targets the `default-latest` archetype profile
-(no real chain data) with a read-only console call and `expect_oracle=pass`, the common case:
+(no real chain data) with a read-only `sysconfig get` and `expect_oracle=pass`, the common case:
 confirm a benign input against a reproduced profile trips nothing.

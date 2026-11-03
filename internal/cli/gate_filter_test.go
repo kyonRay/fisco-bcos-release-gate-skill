@@ -78,6 +78,11 @@ func TestACasesGlobThatMatchesNothingActiveIsAUsageError(t *testing.T) {
 	if code != exitcode.Config || !strings.Contains(errOut, "matches no case") {
 		t.Errorf("code = %v, err = %q; want 20 and a message that says nothing matched", code, errOut)
 	}
+	// Presence, not value: an empty pattern is a filter that matches nothing, not "no filter".
+	code, _, errOut = runReal(t, append(flags, "gate", "run", "-p", "default-latest", "--cases", "")...)
+	if code != exitcode.Config || !strings.Contains(errOut, "--cases") {
+		t.Errorf("code = %v, err = %q; want 20 for an empty --cases", code, errOut)
+	}
 }
 
 // The reserved flag is refused before anything else is resolved, so the refusal is what the

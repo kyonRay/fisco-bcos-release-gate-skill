@@ -46,11 +46,27 @@ type gateOptions struct {
 	profile   string
 	scenarios string
 	cases     string
+	casesSet  bool // --cases was given, even as an empty string
 	failFast  bool
 	parallel  bool
 	// withFuzz is spec §6.3's reserved flag. It exists so the name is CLAIMED and using it is an
 	// explicit refusal rather than "flag provided but not defined", which reads like a typo.
 	withFuzz bool
+}
+
+// parse binds, parses, and records which filter flags were PRESENT: spec §6.2 keys on presence,
+// so `--cases ""` is an empty match (exit 20), not "no filter".
+func (g *gateOptions) parse(fs *flag.FlagSet, args []string) error {
+	g.bind(fs)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "cases" {
+			g.casesSet = true
+		}
+	})
+	return nil
 }
 
 func (g *gateOptions) bind(fs *flag.FlagSet) {
@@ -82,10 +98,12 @@ type roundPlan struct {
 func (g gateOptions) round(all []cases.Case) (roundPlan, error) {
 	sel := splitList(g.scenarios)
 	switch {
-	case len(sel) == 0 && g.cases == "":
+	case len(sel) == 0 && !g.casesSet:
 		return roundPlan{allScenarios: true, sweep: cases.Sweep(all)}, nil
-	case g.cases == "":
+	case !g.casesSet:
 		return roundPlan{scenarios: sel}, nil
+	case g.cases == "":
+		return roundPlan{}, fbterr.Configf("--cases needs a pattern; an empty one matches nothing (spec §6.2)")
 	}
 	sweep, err := cases.Select(all, g.cases)
 	if err != nil {
@@ -103,7 +121,7 @@ func (r roundPlan) skipReason(g gateOptions, c cases.Case) string {
 		return "pending: the defect is not fixed, so a sweep would be permanently red"
 	case c.Status == cases.StatusExample:
 		return "example: a format demonstration, never swept"
-	case g.cases != "":
+	case g.casesSet:
 		return "not matched by --cases " + g.cases
 	case !r.allScenarios:
 		return "not selected: --scenarios names the whole round (spec §6.2)"
@@ -152,8 +170,7 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	fs.SetOutput(io.Discard)
 	finish := RegisterGlobalFlags(fs, &o)
 	var g gateOptions
-	g.bind(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := g.parse(fs, args); err != nil {
 		return emitError(stdout, stderr, o.Output, fbterr.Configf("%v", err))
 	}
 	if err := finish(); err != nil {
@@ -426,8 +443,7 @@ func planCommand(_ context.Context, o GlobalOptions, args []string, stdout, stde
 	fs.SetOutput(io.Discard)
 	finish := RegisterGlobalFlags(fs, &o)
 	var g gateOptions
-	g.bind(fs)
-	if err := fs.Parse(args); err != nil {
+	if err := g.parse(fs, args); err != nil {
 		return emitError(stdout, stderr, o.Output, fbterr.Configf("%v", err))
 	}
 	if err := finish(); err != nil {

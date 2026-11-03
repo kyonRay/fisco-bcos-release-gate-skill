@@ -234,6 +234,11 @@ func (r Registry) List() ([]Case, error) {
 		}
 		sort.Strings(paths)
 		for _, p := range paths {
+			// Spec §6.2: a symlinked .case is not followed. A link can point outside the two case
+			// directories, and a fixture that is really somewhere else is not the one shipped.
+			if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
 			// A hidden file is never a fixture. The first install shipped from a Mac arrived with
 			// AppleDouble twins (._example.case) next to every case, and the registry parsed them as
 			// fixtures and refused the whole round at "gate plan".
@@ -283,9 +288,13 @@ func Select(all []Case, glob string) ([]Case, error) {
 	var out []Case
 	var inactive []string
 	for _, c := range all {
+		// With or without the .case suffix, the same way `case run` names a fixture.
 		ok, err := filepath.Match(glob, c.Name)
 		if err != nil {
 			return nil, fbterr.Configf("--cases %q is not a valid pattern: %v", glob, err)
+		}
+		if !ok {
+			ok, _ = filepath.Match(glob, strings.TrimSuffix(c.Name, ".case"))
 		}
 		if !ok {
 			continue

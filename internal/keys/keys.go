@@ -86,7 +86,7 @@ func intp(v int) *int { return &v }
 // host environment they are a false-green vector -- a leftover SCENARIO_DRY=1 in a developer's
 // shell turns every subsequent gate run into a no-op that still exits 0 (spec §7.5). They are
 // never bound to a config key, never accepted as input, and must be REMOVED from the environment
-// handed to the engine (sub-project 1B performs the removal; this list is the authority).
+// handed to the engine (runner.buildEnv performs the removal; this list is the authority).
 //
 // APPLY_PROFILE is deliberately absent: gate.sh:167 assigns it unconditionally, so the
 // environment cannot override it, and listing it would imply a hazard that does not exist.

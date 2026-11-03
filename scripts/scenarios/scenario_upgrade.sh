@@ -15,8 +15,12 @@
 #   T5  bump data version         console setSystemConfigByKey compatibility_version <target_ver>
 #   T6  flag-flip assertion       re-read each target-version flag, _upg_flag_flipped(before,after)
 #   T7  re-run gate               one-shot oracle pass again, must stay consistent with T1
-#   T8  optional rollback         only if UPGRADE_ROLLBACK=1: swap binaries back + restore the
-#                                  profile's original genesis compatibility_version
+#   T8  downgrade refusal         only if UPGRADE_ROLLBACK=1: ask the chain to set
+#                                  compatibility_version back to the profile's genesis value; the
+#                                  chain must REFUSE (SystemConfigPrecompiled: "should not lower
+#                                  than version nowadays") and still pass the oracle triad after.
+#                                  Binaries are not swapped back: an old binary on upgraded data
+#                                  is a different question this scenario does not answer.
 #
 # This file is SOURCED (by gate.sh's `for f in "$SCRIPT_DIR"/scenarios/*.sh; do source "$f";
 # done` loop — see scripts/gate.sh — or standalone by tests/scenario_upgrade_test.sh /
@@ -83,8 +87,8 @@
 #   BCOS_GROUP_ID      group id for the <groupID, nodeName, ...> JSON-RPC param convention
 #                      (default "group0").
 #   CONSOLE_DIR        console.sh working directory (default console/dist).
-#   UPGRADE_ROLLBACK   1 to also run the optional T8 rollback step (default 0: T8 is skipped, not
-#                      failed).
+#   UPGRADE_ROLLBACK   1 to also run the optional T8 downgrade-refusal step (default 0: T8 is
+#                      skipped, not failed). The name is kept for the host's upgrade.rollback key.
 
 SCENARIO_UPG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -148,6 +152,18 @@ _upg_t0_apply_argv() {
 
 # _upg_find_repo_root — walk up from this script's own dir (not $PWD) looking for the same repo
 # marker scenario_ut.sh's own scenario_ut_find_repo_root uses, so this is cwd-independent too.
+# _upg_downgrade_refused <readback> <target_ver> <orig_ver> — T8's verdict, pure. Return 0 when
+# the chain kept <target_ver> after being asked to go back to <orig_ver>: the authoritative signal
+# is the value read back through listSystemConfigs, not the console's envelope, because the direct
+# call and the committee-proposal path print different envelopes and the console exits 0 on both.
+# Return 2 when <orig_ver> equals <target_ver>: there is no downgrade to refuse, so the caller
+# reports SKIP rather than claiming a refusal it never observed. Return 1 when the version moved.
+_upg_downgrade_refused() {
+    local readback="$1" target="$2" orig="$3"
+    [[ "$orig" != "$target" ]] || return 2
+    [[ "$readback" == "$target" ]]
+}
+
 _upg_find_repo_root() {
     local d="$SCENARIO_UPG_DIR"
     while [[ "$d" != "/" ]]; do
@@ -410,7 +426,7 @@ _upg_dry() {
     echo "DRY: scenario_upgrade: T5 bump data version: console setSystemConfigByKey compatibility_version $target_ver"
     echo "DRY: scenario_upgrade: T6 flag-flip assertion: for each of [$flags_str], _upg_flag_flipped(before,after)"
     echo "DRY: scenario_upgrade: T7 re-run gate: one-shot oracle pass again, compare against T1"
-    echo "DRY: scenario_upgrade: T8 optional rollback (UPGRADE_ROLLBACK=1 only): swap binaries back to $old_bin, restore original compatibility_version"
+    echo "DRY: scenario_upgrade: T8 optional downgrade refusal (UPGRADE_ROLLBACK=1 only): console setSystemConfigByKey compatibility_version <profile genesis value>; chain must refuse (_upg_downgrade_refused) and pass the oracle triad after"
 }
 
 # scenario_upgrade_run <outdir> <old_bin> <new_bin> <target_ver> [profile_path] — execute the
@@ -671,18 +687,51 @@ scenario_upgrade_run() {
     fi
 
     if [[ "${UPGRADE_ROLLBACK:-0}" == 1 ]]; then
-        echo "-- scenario_upgrade: T8 rollback"
-        # PROFILE_GENESIS was already populated by the profile_load call above (RPC_URL
-        # derivation) — no need to re-source profile_lib.sh or reparse the profile here.
+        echo "-- scenario_upgrade: T8 downgrade refusal"
+        # This step used to be called "rollback": swap the binaries back and set
+        # compatibility_version back to the genesis value, with the console's output sent to
+        # /dev/null. The chain refuses every such set (SystemConfigPrecompiled.cpp: "Set
+        # compatibility version should not lower than version nowadays"), so the step could never
+        # succeed and never showed why. What IS a production invariant is the refusal itself, so
+        # that is what T8 asserts now: the version stays at target_ver, and the chain is still
+        # healthy afterwards. Governance chains refuse the direct call with "Permission denied" for
+        # a reason that has nothing to do with the version, so the proposal path is used there, the
+        # same way T5 does it.
+        # PROFILE_GENESIS was already populated by the profile_load call above.
         local orig_compat="${PROFILE_GENESIS[compatibility_version]:-}"
-        for name in "${node_names[@]}"; do
-            _upg_swap_node_binary "$node_dir_root" "$name" "$old_bin" || rc=1
-        done
-        if [[ -n "$orig_compat" ]]; then
-            _upg_console setSystemConfigByKey compatibility_version "$orig_compat" >/dev/null || rc=1
+        local t8_out t8_after t8_verdict
+        if [[ -z "$orig_compat" ]]; then
+            echo "FAIL: scenario_upgrade: T8 cannot run — the profile has no [genesis] compatibility_version to attempt the downgrade with" >&2
+            rc=1
+        else
+            t8_out="$(_upg_console setSystemConfigByKey compatibility_version "$orig_compat" 2>&1)" || true
+            if grep -q "Permission denied" <<<"$t8_out"; then
+                echo ">> scenario_upgrade: T8 direct set refused by governance — retrying as a committee proposal so the version rule itself is what gets tested"
+                t8_out="$(_upg_console setSysConfigProposal compatibility_version "$orig_compat" 2>&1)" || true
+            fi
+            t8_after="$(_upg_get_config_value compatibility_version)"
+            _upg_downgrade_refused "$t8_after" "$target_ver" "$orig_compat" && t8_verdict=0 || t8_verdict=$?
+            case "$t8_verdict" in
+                0) echo "OK: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat refused; compatibility_version still $t8_after" ;;
+                2) echo "SKIP: scenario_upgrade: T8 profile genesis version equals target_ver ($target_ver); there is no downgrade to refuse" ;;
+                *)
+                    echo "FAIL: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat was NOT refused (compatibility_version read back as '$t8_after')" >&2
+                    sed 's/^/         /' <<<"$t8_out" >&2
+                    rc=1
+                    ;;
+            esac
+            # The refusal must leave the chain producing blocks: same triad as T1 and T7.
+            mapfile -t pids < <(_upg_discover_pids)
+            if [[ ${#pids[@]} -eq 0 ]]; then
+                echo "FAIL: scenario_upgrade: T8 found no live node PIDs after the refused downgrade" >&2
+                rc=1
+            elif ! _upg_run_oracle_triad "T8-after-refusal" "$rpc_url" "$node_dir_root" "${pids[@]}"; then
+                echo "FAIL: scenario_upgrade: chain unhealthy after the refused downgrade" >&2
+                rc=1
+            fi
         fi
     else
-        echo "SKIP: scenario_upgrade: T8 rollback (set UPGRADE_ROLLBACK=1 to exercise it)"
+        echo "SKIP: scenario_upgrade: T8 downgrade refusal (set UPGRADE_ROLLBACK=1 to exercise it)"
     fi
 
     return $rc

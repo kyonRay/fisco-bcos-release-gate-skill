@@ -45,7 +45,7 @@ version fails loudly (`_upg_target_flags` returns 1) rather than silently assert
 | T5 | `console.sh setSystemConfigByKey compatibility_version <target_ver>` | non-zero console exit fails the step |
 | T6 | Re-read each target-version flag; `_upg_flag_flipped(before, after)` | must be `null`/empty → `1`; anything else (including "already on before") fails |
 | T7 | Re-run the same oracle triad; compare against T1 | T1 pass + T7 fail = regression, fails; T1 already-failed is noted but doesn't double-fail |
-| T8 | Optional rollback: swap every node back to `old_bin`, restore `[genesis] compatibility_version` from the profile | only runs if `UPGRADE_ROLLBACK=1`; otherwise printed as `SKIP`, not a failure |
+| T8 | Optional downgrade refusal: ask the chain to set `compatibility_version` back to the profile's `[genesis]` value (proposal path on governance chains, like T5); `_upg_downgrade_refused(readback, target, orig)` must see the version unchanged, then the oracle triad runs again | only runs if `UPGRADE_ROLLBACK=1`; otherwise printed as `SKIP`. The chain refuses every downgrade (`SystemConfigPrecompiled.cpp`: "should not lower than version nowadays"), so a "rollback" that set the version back could never succeed; binaries are not swapped back |
 
 ## Rolling swap is real Unix semantics, not simulated
 

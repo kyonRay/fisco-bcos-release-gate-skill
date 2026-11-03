@@ -175,6 +175,9 @@ _upg_downgrade_refused() {
 }
 
 _upg_find_repo_root() {
+    # The host names the checkout (repo.root -> FBT_REPO_ROOT); an installed libexec layout has no
+    # FISCO tree above it, and the upward walk below is only for a dev checkout nested in one.
+    [[ -n "${FBT_REPO_ROOT:-}" && -f "${FBT_REPO_ROOT}/tools/BcosAirBuilder/build_chain.sh" ]] && { echo "$FBT_REPO_ROOT"; return 0; }
     local d="$SCENARIO_UPG_DIR"
     while [[ "$d" != "/" ]]; do
         [[ -f "$d/tools/BcosAirBuilder/build_chain.sh" ]] && {
@@ -464,8 +467,8 @@ scenario_upgrade_run() {
 
     local repo_root
     repo_root="$(_upg_find_repo_root)" || {
-        echo "ERROR: scenario_upgrade: not inside a FISCO-BCOS checkout (no tools/BcosAirBuilder/build_chain.sh found above $SCENARIO_UPG_DIR)" >&2
-        return 1
+        echo "ERROR: scenario_upgrade: no FISCO-BCOS checkout: FBT_REPO_ROOT is unset or has no tools/BcosAirBuilder/build_chain.sh, and none was found above $SCENARIO_UPG_DIR" >&2
+        return 2   # cannot run: the machine/config, not the chain (gate_upgrade.sh maps 2 to infra_error)
     }
     local features_cpp="$repo_root/bcos-framework/bcos-framework/ledger/Features.cpp"
     # IMPORTANT fix: capture via plain command substitution, NOT `mapfile < <(...)`. Process

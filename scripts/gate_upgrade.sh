@@ -128,6 +128,12 @@ set -e
 if (( rc == 0 )); then
     event_set_outcome pass
     echo "GATE UPGRADE: PASS"
+elif (( rc == 2 )); then
+    # The timeline could not START (no checkout to read Features.cpp from, no binary with
+    # subcommands): nothing was judged, so this is the machine's problem (30), not the chain's.
+    event_set_outcome infra_error
+    echo "GATE UPGRADE: could not run (scenario_upgrade_run returned 2)" >&2
+    exit 1
 else
     event_set_outcome gate_fail
     echo "GATE UPGRADE: FAIL (scenario_upgrade_run returned $rc)" >&2

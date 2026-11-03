@@ -30,4 +30,13 @@ if repo_root="$(_upg_find_repo_root 2>/dev/null)" && [[ -f "$repo_root/bcos-fram
 else
     echo "SKIP: Features.cpp not found (not inside a FISCO-BCOS checkout)"
 fi
+
+# An installed layout has no FISCO tree above libexec; the host names the checkout through
+# FBT_REPO_ROOT and the scenario must honour it (the first real upgrade run died on exactly this).
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/tools/BcosAirBuilder" && : > "$tmp/tools/BcosAirBuilder/build_chain.sh"
+assert_eq "$tmp" "$(FBT_REPO_ROOT="$tmp" _upg_find_repo_root)" "_upg_find_repo_root honours FBT_REPO_ROOT"
+rc=0; FBT_REPO_ROOT="$tmp/nonexistent" SCENARIO_UPG_DIR=/ _upg_find_repo_root >/dev/null || rc=$?
+assert_eq 1 "$rc" "a FBT_REPO_ROOT without build_chain.sh is not taken on faith"
+assert_eq "1" "$(grep -c 'elif (( rc == 2 )); then' scripts/gate_upgrade.sh)" "gate_upgrade.sh maps a cannot-run (2) to infra_error, not gate_fail"
 assert_done

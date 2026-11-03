@@ -7,13 +7,17 @@
 table only summarizes as one row — read the script itself (`scenario_upgrade_run`, `_upg_dry`) for
 anything not covered here.
 
-## Args: the model supplies them, `gate.sh` does not
+## Args: `gate_upgrade.sh` supplies them, `gate.sh` does not
 
 `scenario_upgrade_run`'s real signature is:
 
 ```
-scenario_upgrade_run <outdir> <old_bin> <new_bin> <target_ver>
+scenario_upgrade_run <outdir> <old_bin> <new_bin> <target_ver> [profile_abs]
 ```
+
+`profile_abs` is the profile's absolute path and defaults to `production-enterprise.profile`;
+`scripts/gate_upgrade.sh` passes its `-p` through as this argument (the host's `fbt gate upgrade`
+calls that script).
 
 **`gate.sh`'s real-run scenario dispatch loop calls every registered function bare — `"$fn"` with
 zero arguments** (see `gate.sh`'s dispatch loop). `scenario_upgrade_run` defaults all four params
@@ -23,11 +27,12 @@ has no way to supply `<old_bin>`/`<new_bin>`/`<target_ver>`. So `GATE_KNOWN_SCEN
 2 before any chain is touched (see also SKILL.md's "`upgrade` is not a gate-sweep scenario" note) —
 this keeps the default `gate.sh -p <profile>` sweep able to reach `GATE: PASS` on a healthy chain.
 **`--scenarios upgrade` through `gate.sh` never executes the T0-T8 timeline** — it is rejected
-before the run starts; to actually run it, source the file directly:
+before the run starts; to actually run it, use the executable entry point:
 
 ```bash
-source scripts/scenarios/scenario_upgrade.sh
-scenario_upgrade_run ./nodes-release-gate /path/to/old/fisco-bcos /path/to/new/fisco-bcos 3.17.0
+bash scripts/gate_upgrade.sh -p profiles/production-enterprise.profile \
+    --old-bin /path/to/old/fisco-bcos --new-bin /path/to/new/fisco-bcos --target-ver 3.18.0
+# or, through the host:  fbt gate upgrade -p production-enterprise --old-bin … --new-bin … --target-ver 3.18.0
 ```
 
 `old_bin`/`new_bin` must be executable paths to actual `fisco-bcos` binaries; `target_ver` must be

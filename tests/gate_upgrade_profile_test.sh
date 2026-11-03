@@ -20,8 +20,10 @@ assert_contains "$(grep -c 'scenario_upgrade_run "\$OUTDIR_ABS" "\$OLD_BIN" "\$N
 # The 3.18.0 roadmap entry resolves: the T6 flag list for the current release is derived from
 # Features.cpp, never hardcoded, so this only checks that the derivation still works for it.
 source scripts/scenarios/scenario_upgrade.sh
-features_cpp="$(_upg_find_repo_root 2>/dev/null)/bcos-framework/bcos-framework/ledger/Features.cpp"
-if [[ -f "$features_cpp" ]]; then
+# Guarded assignment: under set -e a bare `x="$(f)"` with f returning 1 kills the script before the
+# SKIP branch, which is how this test used to pass only inside a FISCO checkout.
+if repo_root="$(_upg_find_repo_root 2>/dev/null)" && [[ -f "$repo_root/bcos-framework/bcos-framework/ledger/Features.cpp" ]]; then
+    features_cpp="$repo_root/bcos-framework/bcos-framework/ledger/Features.cpp"
     flags="$(_upg_target_flags 3.18.0 "$features_cpp")"
     assert_contains "$flags" "bugfix_eip161_1052_account_semantics" \
         "_upg_target_flags(3.18.0) reads the V3_18_0_VERSION roadmap entry"

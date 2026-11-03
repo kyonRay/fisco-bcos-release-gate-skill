@@ -103,7 +103,7 @@ emit_event upgrade_plan profile "$PROFILE_ABS" old_bin "$OLD_BIN" new_bin "$NEW_
     target_ver "$TARGET_VER" outdir "$OUTDIR"
 
 if (( DRY_RUN )); then
-    echo "DRY: gate_upgrade: profile=$PROFILE_PATH"
+    echo "DRY: gate_upgrade: profile=$PROFILE_ABS"
     echo "DRY: gate_upgrade: T0 baseline binary=$OLD_BIN"
     echo "DRY: gate_upgrade: rolling upgrade target binary=$NEW_BIN"
     echo "DRY: gate_upgrade: T5 compatibility_version bump -> $TARGET_VER"

@@ -152,16 +152,20 @@ _upg_t0_apply_argv() {
 
 # _upg_find_repo_root — walk up from this script's own dir (not $PWD) looking for the same repo
 # marker scenario_ut.sh's own scenario_ut_find_repo_root uses, so this is cwd-independent too.
-# _upg_downgrade_refused <readback> <target_ver> <orig_ver> — T8's verdict, pure. Return 0 when
-# the chain kept <target_ver> after being asked to go back to <orig_ver>: the authoritative signal
-# is the value read back through listSystemConfigs, not the console's envelope, because the direct
-# call and the committee-proposal path print different envelopes and the console exits 0 on both.
-# Return 2 when <orig_ver> equals <target_ver>: there is no downgrade to refuse, so the caller
-# reports SKIP rather than claiming a refusal it never observed. Return 1 when the version moved.
+# _upg_downgrade_refused <console_out> <readback> <target_ver> — T8's verdict, pure. Return 0 only
+# when BOTH hold: the value read back through listSystemConfigs is still <target_ver>, AND the
+# console's output shows the chain refused for the VERSION RULE — the direct path's envelope carries
+# SystemConfigPrecompiled's own message ("Set compatibility version should not lower than version
+# nowadays.", SystemConfigPrecompiled.cpp), the committee path's a "Proposal Status : failed" line.
+# The readback alone is not enough: a governance chain whose proposal is still pending, a java-sdk
+# that rejected the version string client-side, or a direct call refused for permissions all leave
+# the version unchanged without the rule ever having been exercised. Anything else returns 1 and
+# the caller prints the console's output, so a wording this pattern does not know fails loudly
+# rather than passing quietly.
 _upg_downgrade_refused() {
-    local readback="$1" target="$2" orig="$3"
-    [[ "$orig" != "$target" ]] || return 2
-    [[ "$readback" == "$target" ]]
+    local out="$1" readback="$2" target="$3"
+    [[ "$readback" == "$target" ]] || return 1
+    grep -qE 'should not lower|Proposal Status[[:space:]]*:[[:space:]]*failed' <<<"$out"
 }
 
 _upg_find_repo_root() {
@@ -699,10 +703,17 @@ scenario_upgrade_run() {
         # same way T5 does it.
         # PROFILE_GENESIS was already populated by the profile_load call above.
         local orig_compat="${PROFILE_GENESIS[compatibility_version]:-}"
-        local t8_out t8_after t8_verdict
+        local t8_out="" t8_now t8_after
+        t8_now="$(_upg_get_config_value compatibility_version)"
         if [[ -z "$orig_compat" ]]; then
             echo "FAIL: scenario_upgrade: T8 cannot run — the profile has no [genesis] compatibility_version to attempt the downgrade with" >&2
             rc=1
+        elif [[ "$orig_compat" == "$target_ver" ]]; then
+            echo "SKIP: scenario_upgrade: T8 profile genesis version equals target_ver ($target_ver); there is no downgrade to refuse"
+        elif [[ "$t8_now" != "$target_ver" ]]; then
+            # T5 already failed above (and already set rc=1); asking for a downgrade from a version
+            # the chain never reached would test nothing.
+            echo "SKIP: scenario_upgrade: T8 chain reads compatibility_version '$t8_now', not $target_ver — T5 did not land, so there is no downgrade to refuse"
         else
             t8_out="$(_upg_console setSystemConfigByKey compatibility_version "$orig_compat" 2>&1)" || true
             if grep -q "Permission denied" <<<"$t8_out"; then
@@ -710,16 +721,13 @@ scenario_upgrade_run() {
                 t8_out="$(_upg_console setSysConfigProposal compatibility_version "$orig_compat" 2>&1)" || true
             fi
             t8_after="$(_upg_get_config_value compatibility_version)"
-            _upg_downgrade_refused "$t8_after" "$target_ver" "$orig_compat" && t8_verdict=0 || t8_verdict=$?
-            case "$t8_verdict" in
-                0) echo "OK: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat refused; compatibility_version still $t8_after" ;;
-                2) echo "SKIP: scenario_upgrade: T8 profile genesis version equals target_ver ($target_ver); there is no downgrade to refuse" ;;
-                *)
-                    echo "FAIL: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat was NOT refused (compatibility_version read back as '$t8_after')" >&2
-                    sed 's/^/         /' <<<"$t8_out" >&2
-                    rc=1
-                    ;;
-            esac
+            if _upg_downgrade_refused "$t8_out" "$t8_after" "$target_ver"; then
+                echo "OK: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat refused by the version rule; compatibility_version still $t8_after"
+            else
+                echo "FAIL: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat was not refused for the version rule (compatibility_version read back as '$t8_after'); console said:" >&2
+                sed 's/^/         /' <<<"$t8_out" >&2
+                rc=1
+            fi
             # The refusal must leave the chain producing blocks: same triad as T1 and T7.
             mapfile -t pids < <(_upg_discover_pids)
             if [[ ${#pids[@]} -eq 0 ]]; then

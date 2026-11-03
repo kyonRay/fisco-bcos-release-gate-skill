@@ -154,7 +154,7 @@ fisco-bcos-release-gate/
 ├── references/                           loaded by Claude on demand
 │   ├── oracle-detection.md               the three oracles' decision logic, thresholds, tuning
 │   ├── profile-authoring.md              how to hand-capture a new production .profile
-│   └── upgrade-path.md                   T0-T8 operational detail + how scenario_upgrade_run gets its args
+│   └── upgrade-path.md                   T0-T8 operational detail; gate_upgrade.sh -p/--old-bin/--new-bin/--target-ver feed scenario_upgrade_run
 └── tests/                                bash unit tests (tests/assert.sh + tests/*_test.sh)
 ```
 

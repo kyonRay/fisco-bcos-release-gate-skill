@@ -49,7 +49,7 @@ assert_eq "1" "$rc" "_upg_flag_flipped: already on before the bump -> not this s
 # 3.17.0 entry, not a fixed list copied into this test — if that table's line moves this test
 # still reads the same block, and if the set of flags for 3.17.0 changes upstream, this test
 # should be re-derived from the same source rather than hand-edited to match.
-repo_root="$(_upg_find_repo_root)"
+repo_root="$(_upg_find_repo_root 2>/dev/null || true)"  # empty outside a checkout -> SKIP below, not an exit
 features_cpp="$repo_root/bcos-framework/bcos-framework/ledger/Features.cpp"
 if [[ -f "$features_cpp" ]]; then
     out="$(_upg_target_flags 3.17.0 "$features_cpp")"
@@ -90,7 +90,7 @@ assert_contains "$out" "T0" "dry output lists T0 (reproduce prod)"
 assert_contains "$out" "_upg_no_fork" "dry output lists the T2-T4 no-fork check"
 assert_contains "$out" "compatibility_version 3.17.0" "dry output lists the T5 version bump with the requested target"
 assert_contains "$out" "_upg_flag_flipped" "dry output lists the T6 flag-flip check"
-assert_contains "$out" "T8" "dry output lists the optional T8 rollback step"
+assert_contains "$out" "T8" "dry output lists the optional T8 downgrade-refusal step"
 assert_not_contains "$out" "ERROR" "dry output reports no errors (confirms nothing was actually sent)"
 
 # False-green-closed proof, DRY-mode counterpart: a bad target_ver's T6 line must surface the

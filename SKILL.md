@@ -160,8 +160,9 @@ itself (SSL off, single peer, signing account pinned to the genesis auth_admin t
 
 **`upgrade` is not a gate-sweep scenario — selecting it is a usage error, on purpose.**
 `scenario_upgrade_run`'s real signature is `scenario_upgrade_run <outdir> <old_bin> <new_bin>
-<target_ver>`, but `gate.sh`'s real-run dispatch loop calls every registered scenario function bare
-(no arguments) — it cannot supply those four. So `GATE_KNOWN_SCENARIOS` is exactly the four
+<target_ver> [profile_abs]` (`scripts/gate_upgrade.sh -p … --old-bin … --new-bin … --target-ver …`
+supplies all five; the host exposes it as `fbt gate upgrade`), but `gate.sh`'s real-run dispatch
+loop calls every registered scenario function bare (no arguments) — it cannot supply them. So `GATE_KNOWN_SCENARIOS` is exactly the four
 runnable families (`ut dual_rpc malformed jsd`); `upgrade` is deliberately excluded from it, even
 though `scenario_upgrade.sh` still self-registers into `GATE_SCENARIOS` for callers that source it
 directly. `_gate_validate_scenarios` checks every requested name and rejects a bare `upgrade`

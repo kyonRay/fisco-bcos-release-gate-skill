@@ -23,9 +23,13 @@ func TestCaseRunAndGateUpgradeCheckTheirDependenciesFirst(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	ossl := filepath.Join(repo, "openssl")
+	if err := os.WriteFile(ossl, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	// A binary that exists but answers `help` with nothing: present as a path, no subcommands.
 	// That is the machine's problem (a 3.17 build), class infra, exit 30.
-	cfg := ti.WriteConfig(t, "repo:\n  root: "+repo+"\ntools:\n  fisco_bin: "+bin+"\n"+
+	cfg := ti.WriteConfig(t, "repo:\n  root: "+repo+"\ntools:\n  fisco_bin: "+bin+"\n  openssl_cmd: "+ossl+"\n"+
 		"cluster:\n  p2p_base_port: 45300\n  bcos_base_port: 45200\n  web3_base_port: 45545\n")
 	flags := []string{"--engine-dir", ti.Root, "--state-dir", ti.State, "--config", cfg}
 	writeCase(t, ti, "live.case", "active")

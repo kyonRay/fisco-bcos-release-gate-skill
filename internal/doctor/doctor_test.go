@@ -16,6 +16,7 @@ type fakeProbe struct {
 	bash    int
 	modules map[string]bool
 	subcmd  map[string]bool
+	keccak  map[string]bool
 }
 
 func (f fakeProbe) LookPath(exe string) bool { return f.path[exe] }
@@ -24,6 +25,7 @@ func (f fakeProbe) BashMajor() int           { return f.bash }
 
 func (f fakeProbe) NodeModule(_, name string) bool { return f.modules[name] }
 func (f fakeProbe) Subcommands(path string) bool   { return f.subcmd[path] }
+func (f fakeProbe) OpenSSLKeccak(cmd string) bool  { return f.keccak[cmd] }
 
 func everything() fakeProbe {
 	return fakeProbe{
@@ -32,6 +34,7 @@ func everything() fakeProbe {
 		bash:    5,
 		modules: map[string]bool{"viem": true},
 		subcmd:  map[string]bool{},
+		keccak:  map[string]bool{"openssl": true},
 	}
 }
 

@@ -47,9 +47,12 @@ func gateFixture(t *testing.T, gateBody, caseBody string) (testinstall.Install, 
 		}
 	}
 	// The binary stub answers `help` the way a 3.18.0 fisco-bcos does, so the doctor's subcommand
-	// probe passes; the tamper stub is only ever checked for existence.
+	// probe passes; the openssl stub accepts `dgst -keccak-256` the way OpenSSL 3.2+ does (the
+	// probe really runs it, and this machine's PATH openssl is a 1.1.1 that cannot); the tamper
+	// stub is only ever checked for existence.
 	for f, body := range map[string]string{
 		"repo/fisco-bcos": "#!/bin/sh\n[ \"$1\" = help ] && echo 'subcommands:'\nexit 0\n",
+		"tools/openssl":   "#!/bin/sh\nexit 0\n",
 		"tools/tamper.sh": "#!/bin/sh\n",
 	} {
 		if err := os.WriteFile(filepath.Join(ti.Root, f), []byte(body), 0o755); err != nil {
@@ -80,6 +83,7 @@ func gateFixture(t *testing.T, gateBody, caseBody string) (testinstall.Install, 
 		"  fisco_bin: "+filepath.Join(ti.Root, "repo/fisco-bcos")+"\n"+
 		"  java_bin: "+java+"\n"+
 		"  tamper_helper: "+filepath.Join(ti.Root, "tools/tamper.sh")+"\n"+
+		"  openssl_cmd: "+filepath.Join(ti.Root, "tools/openssl")+"\n"+
 		"  build_dir: "+filepath.Join(ti.Root, "build")+"\n"+
 		"  web3_private_key: '0xabc'\n"+
 		"jsd:\n  dir: "+filepath.Join(ti.Root, "jsd")+"\n"+

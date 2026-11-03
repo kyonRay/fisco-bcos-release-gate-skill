@@ -175,6 +175,10 @@ var table = []Row{
 	// The chain is driven through the node binary's own subcommands (ops_lib.sh). tools.ops_bin is
 	// the binary that provides them; the engine defaults it to tools.fisco_bin, and only the upgrade
 	// command sets it apart (its T0 chain runs an old binary without subcommands).
+	// build_chain.sh 3.18.0 derives node accounts with `openssl dgst -keccak-256` (OpenSSL 3.2+ or
+	// Tongsuo) and reads OPENSSL_CMD to find the binary; the host forwards the key for the same
+	// reason it forwards FISCO_BIN, and the doctor probes the capability, not just the file.
+	{Key: "tools.openssl_cmd", Env: []string{"OPENSSL_CMD"}, Type: KindPath, Commands: []string{"case", "cluster", "gate", "upgrade"}},
 	{Key: "tools.ops_bin", Env: []string{"OPS_BIN"}, Type: KindPath, Commands: []string{"case", "cluster", "gate", "upgrade"}},
 	{Key: "tools.ops_timeout_ms", Env: []string{"OPS_TIMEOUT_MS"}, Type: KindInt, Min: intp(1000), Commands: []string{"case", "cluster", "gate", "upgrade"}},
 	{Key: "tools.fisco_bin", Env: []string{"FISCO_BIN"}, Type: KindPath, Commands: []string{"cluster", "doctor", "gate"}},

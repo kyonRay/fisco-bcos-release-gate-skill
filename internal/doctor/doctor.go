@@ -43,6 +43,11 @@ const (
 	// 3.17 binary passes every path check and then dies inside apply_profile.sh's replay; asking
 	// `<bin> help` up front turns that into a sentence. Unset key: 20; set but no subcommands: 30.
 	KindSubcommands
+	// KindOpenSSLKeccak: build_chain.sh (3.18.0) refuses to generate a chain unless
+	// `$OPENSSL_CMD dgst -keccak-256` works, which stock OpenSSL below 3.2 cannot do. Probed by
+	// running exactly that, with the configured command or plain "openssl". Always infra: the
+	// machine needs a newer OpenSSL or Tongsuo, pointed at through tools.openssl_cmd.
+	KindOpenSSLKeccak
 )
 
 // Requirement is one row of the matrix.
@@ -77,6 +82,8 @@ var matrix = map[string][]Requirement{
 			Why: "the fisco-bcos binary under test"},
 		{Name: "subcommands", Kind: KindSubcommands, ConfigKey: "tools.ops_bin",
 			Why: "the profile replay, the BCOS RPC leg and funding go through the binary's own sysconfig/tx/balance subcommands (3.18.0+)"},
+		{Name: "openssl-keccak", Kind: KindOpenSSLKeccak, ConfigKey: "tools.openssl_cmd",
+			Why: "build_chain.sh derives node accounts with `openssl dgst -keccak-256` (OpenSSL 3.2+ or Tongsuo)"},
 		{Name: "java", Kind: KindPath, ConfigKey: "tools.java_bin",
 			Scenarios: []string{"malformed", "jsd"},
 			Why:       "the tamper helper and the JSD driver are JVM programs"},
@@ -120,6 +127,8 @@ var matrix = map[string][]Requirement{
 		{Name: "node-binary", Kind: KindPath, ConfigKey: "tools.fisco_bin", Why: "the binary under test"},
 		{Name: "subcommands", Kind: KindSubcommands, ConfigKey: "tools.ops_bin",
 			Why: "the profile replay goes through the binary's own sysconfig subcommand (3.18.0+)"},
+		{Name: "openssl-keccak", Kind: KindOpenSSLKeccak, ConfigKey: "tools.openssl_cmd",
+			Why: "build_chain.sh derives node accounts with `openssl dgst -keccak-256` (OpenSSL 3.2+ or Tongsuo)"},
 	},
 	// The T0-T8 upgrade timeline: T0 is an apply_profile.sh bring-up, T1/T7/T8 run the oracle
 	// triad, T5 and T6 go through the console. The two binaries come from --old-bin/--new-bin,
@@ -132,6 +141,8 @@ var matrix = map[string][]Requirement{
 			Why: "build_chain.sh and Features.cpp (the T6 flag list) live in the checkout"},
 		{Name: "subcommands", Kind: KindSubcommands, ConfigKey: "tools.ops_bin",
 			Why: "T0's replay, the T5 compatibility_version bump and the T6 flag readback go through the NEW binary's sysconfig subcommand"},
+		{Name: "openssl-keccak", Kind: KindOpenSSLKeccak, ConfigKey: "tools.openssl_cmd",
+			Why: "T0's build_chain.sh derives node accounts with `openssl dgst -keccak-256` (OpenSSL 3.2+ or Tongsuo)"},
 	},
 	// Bringing a cluster up runs the whole of apply_profile.sh: build_chain, the config.ini patch,
 	// and the sysconfig replay of every [system_config_replay] pair. It is the gate list minus the
@@ -146,6 +157,8 @@ var matrix = map[string][]Requirement{
 			Why: "the fisco-bcos binary the cluster runs"},
 		{Name: "subcommands", Kind: KindSubcommands, ConfigKey: "tools.ops_bin",
 			Why: "the profile's sysconfig replay goes through the binary's own subcommands (3.18.0+)"},
+		{Name: "openssl-keccak", Kind: KindOpenSSLKeccak, ConfigKey: "tools.openssl_cmd",
+			Why: "build_chain.sh derives node accounts with `openssl dgst -keccak-256` (OpenSSL 3.2+ or Tongsuo)"},
 	},
 	// Teardown and inspection check NOTHING. Spec §5 is explicit: never refuse to stop a cluster
 	// because java or Viem is missing. A half-installed machine with a stuck cluster is precisely
@@ -218,6 +231,8 @@ type Probe interface {
 	LookPath(exe string) bool
 	// Subcommands reports whether the fisco-bcos binary at path carries the ops subcommands.
 	Subcommands(path string) bool
+	// OpenSSLKeccak reports whether `cmd dgst -keccak-256` works.
+	OpenSSLKeccak(cmd string) bool
 	// NodeModule reports whether name is importable with dir as the working directory.
 	NodeModule(dir, name string) bool
 	Exists(path string) bool
@@ -235,6 +250,13 @@ func (OSProbe) Exists(path string) bool  { _, err := os.Stat(path); return err =
 func (OSProbe) Subcommands(path string) bool {
 	out, err := exec.Command(path, "help").CombinedOutput()
 	return err == nil && strings.Contains(string(out), "subcommands:")
+}
+
+// OpenSSLKeccak runs the exact probe build_chain.sh's check_openssl runs.
+func (OSProbe) OpenSSLKeccak(cmd string) bool {
+	c := exec.Command(cmd, "dgst", "-keccak-256")
+	c.Stdin = strings.NewReader("")
+	return c.Run() == nil
 }
 
 // NodeModule asks node itself, from dir, rather than guessing at node_modules layouts: the engine
@@ -361,6 +383,20 @@ func CheckIn(base string, plan []Requirement, config map[string]string, p Probe)
 				missingInfra = append(missingInfra, f.Detail)
 			default:
 				f.Present = true
+			}
+		case KindOpenSSLKeccak:
+			cmd := config[r.ConfigKey]
+			if cmd == "" {
+				cmd = "openssl" // build_chain.sh's own default
+			} else if strings.ContainsRune(cmd, filepath.Separator) {
+				cmd = resolveAgainst(base, cmd)
+			}
+			f.Present = p.OpenSSLKeccak(cmd)
+			if !f.Present {
+				f.Class = "infra"
+				f.Detail = cmd + " cannot compute `dgst -keccak-256`: " + r.Why +
+					"; install OpenSSL 3.2+ or Tongsuo and point tools.openssl_cmd at it"
+				missingInfra = append(missingInfra, f.Detail)
 			}
 		case KindValue:
 			v := config[r.ConfigKey]

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/clusters"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/doctor"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/execution"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
@@ -163,9 +164,32 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 		if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, withOpsBin(rt.Values, newBin), doctor.OSProbe{}); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
+		// T0 builds a chain on the configured port band like any gate round, so it gets the same
+		// discipline: bind-probe, reclaim crash leftovers, reserve -- and keep the reservation if
+		// the timeline ends with nodes still up. Without this the third real upgrade run left four
+		// 3.17.0 nodes on the band with nothing in the registry to name them.
+		ports, err := derivePorts(rt.Values)
+		if err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
+		if err := clusters.CheckFree(ports); err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
+		if _, err := rt.Registry.Reclaim(); err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
 		if err := rt.begin(map[string]interface{}{"command": "upgrade", "target_ver": targetVer}); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
+		if _, err := rt.Registry.Reserve(clusters.Entry{
+			RunID:     rt.Norm.RunID,
+			Workspace: rt.Workspace.Cluster,
+			Profile:   profileSpec,
+			Ports:     ports,
+		}, false); err != nil {
+			return rt.fail(stdout, stderr, o.Output, err)
+		}
+		defer func() { releaseUnlessAlive(rt, stderr) }()
 		upArgs = append(upArgs, "-o", rt.Workspace.Cluster)
 	}
 

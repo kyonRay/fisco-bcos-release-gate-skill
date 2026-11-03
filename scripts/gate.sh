@@ -205,6 +205,11 @@ bash "$APPLY_PROFILE" -p "$PROFILE_PATH" -o "$CLUSTER_OUTDIR"
 
 CLUSTER_OUTDIR_ABS="$(cd "$CLUSTER_OUTDIR" && pwd)"
 NODE_DIR="$CLUSTER_OUTDIR_ABS/127.0.0.1"
+# The cluster IS the -o workspace, for every scenario that asks: scenario_jsd.sh reads
+# RG_CLUSTER_DIR for the admin key under <cluster>/ca/accounts, and with the host handing out a
+# workspace per run the old default ./nodes-release-gate named a directory that did not exist --
+# the jsd family failed before sending a transaction, and the round reported the CHAIN as failed.
+export RG_CLUSTER_DIR="$CLUSTER_OUTDIR_ABS"
 
 # RPC URL: derive from node0's FINAL config.ini via _primary_web3_url, not from the profile's own
 # [config_ini_override] value — the profile only names the port apply_profile.sh would have
@@ -273,18 +278,29 @@ rpc_current_height() {
 # "baseline" or "after:<scenario>", and report_defects.sh maps `scenario` straight into 场景族, a
 # singleSelect column whose option set does not include "after:<x>" strings — only the bare
 # scenario family names (plus "baseline" itself, which is a valid option).
+# Every check also goes out as an `oracle_check` event (oracle, phase, verdict pass|trip|error):
+# that is what the host's gate document and `fbt report` are built from. Until these emits
+# existed the engine printed its verdicts to stdout only, and the first real 3.18.0 round's
+# transcript held six host events and nothing about what was judged -- `fbt report` said
+# "nothing was recorded" about a round that had passed three scenario families.
 run_oracles_once() {
     local phase="$1" rc=0 height scenario_label
     scenario_label="$(_gate_scenario_label "$phase")"
     echo ">> oracle check ($phase): crash"
-    if ! bash "$SCRIPT_DIR/oracle_crash.sh" --once "${node_pids[@]}"; then
+    if bash "$SCRIPT_DIR/oracle_crash.sh" --once "${node_pids[@]}"; then
+        emit_event oracle_check oracle crash phase "$phase" verdict pass
+    else
+        emit_event oracle_check oracle crash phase "$phase" verdict trip
         rc=1
         failures_append "$FAILURES_OUTDIR" "$profile_name" "$scenario_label" "crash" "高" \
             "oracle_crash tripped during $phase" "bash $SCRIPT_DIR/gate.sh -p $PROFILE_PATH" \
             "$NODE_DIR" "${PROFILE_GENESIS[compatibility_version]:-unknown}"
     fi
     echo ">> oracle check ($phase): liveness"
-    if ! bash "$SCRIPT_DIR/oracle_liveness.sh" -r "$RPC_URL"; then
+    if bash "$SCRIPT_DIR/oracle_liveness.sh" -r "$RPC_URL"; then
+        emit_event oracle_check oracle halt phase "$phase" verdict pass
+    else
+        emit_event oracle_check oracle halt phase "$phase" verdict trip
         rc=1
         failures_append "$FAILURES_OUTDIR" "$profile_name" "$scenario_label" "halt" "高" \
             "oracle_liveness tripped during $phase" "bash $SCRIPT_DIR/gate.sh -p $PROFILE_PATH" \
@@ -293,6 +309,7 @@ run_oracles_once() {
     height="$(rpc_current_height)"
     if [[ -z "$height" ]]; then
         echo "ERROR: could not read block height from $RPC_URL for stateroot oracle ($phase)" >&2
+        emit_event oracle_check oracle state-mismatch phase "$phase" verdict error
         rc=1
     else
         echo ">> oracle check ($phase): stateroot @ $height (multi-node discovery under $NODE_DIR)"
@@ -300,13 +317,17 @@ run_oracles_once() {
         _run_stateroot_oracle "$height" "$NODE_DIR" "${RG_FUZZ_STATEROOT_URLS:-}" || sr_rc=$?
         if [[ "$sr_rc" == 3 ]]; then
             echo "ERROR: stateroot ($phase): <2 node RPCs discovered under $NODE_DIR" >&2
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict error
             rc=1
         elif [[ "$sr_rc" == 1 ]]; then
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict trip
             rc=1
             failures_append "$FAILURES_OUTDIR" "$profile_name" "$scenario_label" "state-mismatch" "高" \
                 "oracle_stateroot tripped during $phase @ height $height" \
                 "bash $SCRIPT_DIR/gate.sh -p $PROFILE_PATH" \
                 "$NODE_DIR" "${PROFILE_GENESIS[compatibility_version]:-unknown}"
+        else
+            emit_event oracle_check oracle state-mismatch phase "$phase" verdict pass
         fi
     fi
     return $rc
@@ -324,10 +345,13 @@ scenario_failed=0
 for name in "${scenario_list[@]}"; do
     fn="${GATE_SCENARIOS[$name]}"
     echo "-- running scenario: $name"
+    emit_event scenario_started name "$name"
     if "$fn"; then
         echo "-- scenario '$name' PASSED"
+        emit_event scenario_finished name "$name" result pass
     else
         echo "-- scenario '$name' FAILED"
+        emit_event scenario_finished name "$name" result fail
         scenario_failed=1
     fi
     run_oracles_once "after:$name" || oracle_tripped=1

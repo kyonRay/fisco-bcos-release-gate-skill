@@ -104,11 +104,30 @@ var matrix = map[string][]Requirement{
 		{Name: "java", Kind: KindPath, ConfigKey: "tools.java_bin", Why: "the fuzz driver is a JVM program"},
 		{Name: "fuzz-jar", Kind: KindPath, ConfigKey: "tools.fuzz_jar", Why: "the fuzz driver itself"},
 	},
+	// run_case.sh reproduces the case's profile through apply_profile.sh before replaying the
+	// input, so it needs everything a bring-up needs -- the console replay included.
 	"case": {
 		{Name: "bash4", Kind: KindBashVersion, Why: "run_case.sh is a bash script"},
 		{Name: "curl", Kind: KindExecutable, Exe: "curl", Why: "a case input is usually an RPC call"},
+		{Name: "pgrep", Kind: KindExecutable, Exe: "pgrep", Why: "the crash oracle looks for node processes"},
 		{Name: "repo", Kind: KindPath, ConfigKey: "repo.root", Why: "a case reproduces a profile locally"},
 		{Name: "node-binary", Kind: KindPath, ConfigKey: "tools.fisco_bin", Why: "the binary under test"},
+		{Name: "console", Kind: KindPath, ConfigKey: "tools.console_dir",
+			Why: "the profile's setSystemConfigByKey replay goes through console.sh"},
+		{Name: "java", Kind: KindPath, ConfigKey: "tools.java_bin", Why: "the console is a JVM program"},
+	},
+	// The T0-T8 upgrade timeline: T0 is an apply_profile.sh bring-up, T1/T7/T8 run the oracle
+	// triad, T5 and T6 go through the console. The two binaries come from --old-bin/--new-bin,
+	// which gate_upgrade.sh checks itself (a missing one is infra_error), so they are not here.
+	"upgrade": {
+		{Name: "bash4", Kind: KindBashVersion, Why: "gate_upgrade.sh and the scenario are bash scripts"},
+		{Name: "curl", Kind: KindExecutable, Exe: "curl", Why: "height and hash are sampled over HTTP"},
+		{Name: "pgrep", Kind: KindExecutable, Exe: "pgrep", Why: "the crash oracle looks for node processes"},
+		{Name: "repo", Kind: KindPath, ConfigKey: "repo.root",
+			Why: "build_chain.sh and Features.cpp (the T6 flag list) live in the checkout"},
+		{Name: "console", Kind: KindPath, ConfigKey: "tools.console_dir",
+			Why: "the T5 compatibility_version bump and the T6 flag readback go through console.sh"},
+		{Name: "java", Kind: KindPath, ConfigKey: "tools.java_bin", Why: "the console is a JVM program"},
 	},
 	// Bringing a cluster up runs the whole of apply_profile.sh: build_chain, the config.ini patch,
 	// and the console replay of every [system_config_replay] pair. It is the gate list minus the

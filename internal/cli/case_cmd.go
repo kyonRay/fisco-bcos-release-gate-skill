@@ -8,6 +8,7 @@ import (
 
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/cases"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/clusters"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/doctor"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/execution"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
 	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
@@ -156,8 +157,16 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		cmdArgs = append(cmdArgs, "--dry-run")
 	} else {
 		// run_case.sh calls apply_profile.sh, so a replay builds a chain of its own -- and a chain
-		// needs the same port discipline as any other. Without this, `case run` was the one command
-		// that could quietly collide with a cluster `cluster up` had left running.
+		// needs the same dependency check and the same port discipline as any other. Without the
+		// check, a replay on a machine with no console died inside apply_profile.sh and was
+		// reported as the chain's verdict.
+		plan, err := doctor.Plan("case", nil)
+		if err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
+		if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, rt.Values, doctor.OSProbe{}); err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
 		ports, err := derivePorts(rt.Values)
 		if err != nil {
 			return emitError(stdout, stderr, o.Output, err)

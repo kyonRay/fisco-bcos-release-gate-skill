@@ -153,6 +153,16 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 	if dryRun {
 		upArgs = append(upArgs, "--dry-run")
 	} else {
+		// Refused before T0 builds anything: a missing console would otherwise surface at T5, four
+		// node starts and one binary swap later, as a gate failure on a chain that was never
+		// upgraded.
+		plan, err := doctor.Plan("upgrade", nil)
+		if err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
+		if _, err := doctor.CheckIn(rt.Exec.RepoRoot, plan, rt.Values, doctor.OSProbe{}); err != nil {
+			return emitError(stdout, stderr, o.Output, err)
+		}
 		if err := rt.begin(map[string]interface{}{"command": "upgrade", "target_ver": targetVer}); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}

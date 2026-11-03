@@ -191,8 +191,8 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 			return rt.fail(stdout, stderr, o.Output, err)
 		}
 		// run_case.sh tears its own cluster down, but only the host knows the run id the entry is
-		// filed under -- same split as gate run.
-		defer func() { _ = rt.Registry.Release(rt.Norm.RunID) }()
+		// filed under -- same split as gate run, same "only if the nodes are really gone".
+		defer func() { releaseUnlessAlive(rt, stderr) }()
 		cmdArgs = append(cmdArgs, "-o", rt.Workspace.Cluster)
 	}
 

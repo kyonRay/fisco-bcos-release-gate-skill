@@ -149,6 +149,9 @@ type GateDoc struct {
 	Cases     []stageEntry `json:"cases"`
 	Oracles   []oracleHit  `json:"oracles"`
 	Reason    string       `json:"reason,omitempty"`
+	// ClusterKept is set when the run ended with its nodes still running (a bring-up that failed
+	// after start_all.sh): the reservation was kept, and `fbt cluster down --run-id` stops it.
+	ClusterKept bool `json:"cluster_kept,omitempty"`
 }
 
 type stageEntry struct {
@@ -236,10 +239,15 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		return rt.fail(stdout, stderr, o.Output, err)
 	}
 	// The reservation is released here rather than by gate.sh: the engine tears the cluster down,
-	// but only the host knows the run id the entry is filed under.
-	defer func() { _ = rt.Registry.Release(rt.Norm.RunID) }()
-
+	// but only the host knows the run id the entry is filed under -- and only if the nodes are
+	// really gone (see releaseUnlessAlive).
 	doc := GateDoc{RunID: rt.Norm.RunID, Workspace: rt.Workspace.Root, Profile: g.profile}
+	released := false
+	defer func() {
+		if !released { // an early return: still never drop a reservation whose nodes are alive
+			releaseUnlessAlive(rt, stderr)
+		}
+	}()
 
 	// 3. Stage one: the scenario families. Skipped entirely when the round is cases-only
 	// (spec §6.2): gate.sh would build a chain to run nothing on.
@@ -276,6 +284,9 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	code := rt.Agg.Result()
 	rt.Exec.Finish(code)
 	rt.finish() // close the run transcript after the last event
+	// Decided before the document is rendered, so the JSON says whether a chain was left behind.
+	doc.ClusterKept = releaseUnlessAlive(rt, stderr)
+	released = true
 
 	// The report is derived from the normalized event stream, not assembled alongside it. A second
 	// source of truth here is how a summary comes to disagree with the events it summarizes.

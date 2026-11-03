@@ -12,7 +12,7 @@ const ws = "/state/runs/R1/cluster"
 func TestParsePgrepNamesEveryNode(t *testing.T) {
 	out := "1001 " + ws + "/127.0.0.1/node0/../fisco-bcos -c config.ini\n" +
 		"1002 " + ws + "/127.0.0.1/node1/../fisco-bcos -c config.ini\n"
-	got := parsePgrep(out, 999, fakeFinger{})
+	got := parsePgrep(out, "", 999, fakeFinger{})
 	if len(got) != 2 {
 		t.Fatalf("got %d nodes, want 2: %+v", len(got), got)
 	}
@@ -31,7 +31,7 @@ func TestParsePgrepNamesEveryNode(t *testing.T) {
 func TestParsePgrepSkipsOurOwnProcess(t *testing.T) {
 	out := "999 fbt --state-dir /state cluster up -o " + ws + "/x\n" +
 		"1001 " + ws + "/127.0.0.1/node0/../fisco-bcos\n"
-	got := parsePgrep(out, 999, fakeFinger{})
+	got := parsePgrep(out, "", 999, fakeFinger{})
 	if len(got) != 1 || got[0].PID != 1001 {
 		t.Fatalf("got %+v, want only the node", got)
 	}
@@ -43,7 +43,7 @@ func TestParsePgrepSkipsOurOwnProcess(t *testing.T) {
 func TestParsePgrepCountsOnlyTheNodeBinary(t *testing.T) {
 	out := "1001 tail -f " + ws + "/127.0.0.1/node0/log/log\n" +
 		"1002 " + ws + "/127.0.0.1/node0/../fisco-bcos\n"
-	got := parsePgrep(out, 999, fakeFinger{})
+	got := parsePgrep(out, "", 999, fakeFinger{})
 	if len(got) != 1 || got[0].PID != 1002 {
 		t.Fatalf("got %+v, want only the fisco-bcos process", got)
 	}
@@ -53,7 +53,7 @@ func TestParsePgrepCountsOnlyTheNodeBinary(t *testing.T) {
 // ties discovery to the machinery it feeds.
 func TestDiscoveredNodesMakeTheEntryActiveRatherThanUnknown(t *testing.T) {
 	out := "1001 " + ws + "/127.0.0.1/node0/../fisco-bcos\n"
-	nodes := parsePgrep(out, 999, fakeFinger{})
+	nodes := parsePgrep(out, "", 999, fakeFinger{})
 	if s := statusOf(nodes, fakeFinger{}); s != StatusActive {
 		t.Errorf("status = %v, want active; with no nodes it stays unknown forever", s)
 	}

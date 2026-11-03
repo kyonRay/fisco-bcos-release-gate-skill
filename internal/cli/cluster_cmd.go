@@ -263,8 +263,18 @@ func clusterDown(ctx context.Context, o GlobalOptions, args []string, stdout, st
 	// Resolve refuses to guess between several active clusters. Guessing here tears down somebody
 	// else's investigation on a shared machine.
 	entry, err := rt.Registry.Resolve(runID, ws)
+	registered := err == nil
 	if err != nil {
-		return emitError(stdout, stderr, o.Output, err)
+		// An explicit workspace that build_chain laid out but nobody registered (a run that died
+		// between reserving and recording, or a cluster built by hand) is not ambiguous: stop
+		// exactly that directory, and have nothing to release.
+		if ws == "" || !clusters.LooksLikeCluster(ws) {
+			return emitError(stdout, stderr, o.Output, err)
+		}
+		entry = clusters.Entry{RunID: "(unregistered)", Workspace: ws}
+		if len(clusters.DiscoverNodes(ws, clusters.OSProber{})) == 0 {
+			entry.Status = clusters.StatusStale
+		}
 	}
 
 	doc := downDoc{RunID: entry.RunID, Workspace: entry.Workspace, Outcome: "stopped"}
@@ -284,7 +294,7 @@ func clusterDown(ctx context.Context, o GlobalOptions, args []string, stdout, st
 	} else {
 		doc.Outcome = "already stopped"
 	}
-	if !keep {
+	if !keep && registered {
 		if err := rt.Registry.Release(entry.RunID); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}

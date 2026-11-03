@@ -234,6 +234,12 @@ func (r Registry) List() ([]Case, error) {
 		}
 		sort.Strings(paths)
 		for _, p := range paths {
+			// A hidden file is never a fixture. The first install shipped from a Mac arrived with
+			// AppleDouble twins (._example.case) next to every case, and the registry parsed them as
+			// fixtures and refused the whole round at "gate plan".
+			if strings.HasPrefix(filepath.Base(p), ".") {
+				continue
+			}
 			c, err := Parse(p)
 			if err != nil {
 				return nil, err

@@ -7,7 +7,7 @@ source_chain = archetype-default-latest
 captured_at = 2026-08-06
 binary_version = <archetype, tracks upstream latest release>
 [genesis]
-compatibility_version = 3.17.0
+compatibility_version = 3.18.0
 [system_config_replay]
 [config_ini_override]
 # Gate runs drive the chain through the console, which is configured SSL-off; leaving RPC SSL on

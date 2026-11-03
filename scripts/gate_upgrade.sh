@@ -114,8 +114,11 @@ fi
 
 source "$SCRIPT_DIR/scenarios/scenario_upgrade.sh"
 
-mkdir -p "$OUTDIR"
-OUTDIR_ABS="$(cd "$OUTDIR" && pwd)"
+# NOT created here: build_chain refuses an -o directory that already exists ("DIR already exist,
+# please check!"), and T0 hands this path to apply_profile.sh -> cluster_up.sh -> build_chain. The
+# host's workspace layer learned this on 08-12; this entry point pre-created it anyway, so the
+# first real upgrade run died before building a node. Only the PARENT has to exist.
+OUTDIR_ABS="$(cd "$(dirname "$OUTDIR")" && pwd)/$(basename "$OUTDIR")"
 
 set +e
 scenario_upgrade_run "$OUTDIR_ABS" "$OLD_BIN" "$NEW_BIN" "$TARGET_VER" "$PROFILE_ABS"

@@ -39,4 +39,5 @@ assert_eq "$tmp" "$(FBT_REPO_ROOT="$tmp" _upg_find_repo_root)" "_upg_find_repo_r
 rc=0; FBT_REPO_ROOT="$tmp/nonexistent" SCENARIO_UPG_DIR=/ _upg_find_repo_root >/dev/null || rc=$?
 assert_eq 1 "$rc" "a FBT_REPO_ROOT without build_chain.sh is not taken on faith"
 assert_eq "1" "$(grep -c 'elif (( rc == 2 )); then' scripts/gate_upgrade.sh)" "gate_upgrade.sh maps a cannot-run (2) to infra_error, not gate_fail"
+assert_eq "0" "$(grep -c 'mkdir -p "\$OUTDIR"' scripts/gate_upgrade.sh)" "gate_upgrade.sh does not pre-create the -o directory build_chain will refuse"
 assert_done

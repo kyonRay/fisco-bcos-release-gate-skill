@@ -94,7 +94,12 @@ for req in OLD_BIN:--old-bin NEW_BIN:--new-bin; do
     fi
 done
 
-emit_event upgrade_plan profile "$PROFILE_PATH" old_bin "$OLD_BIN" new_bin "$NEW_BIN" \
+# scenario_upgrade_run takes the profile as an ABSOLUTE path (its 5th argument); it used to be
+# dropped here, so every upgrade ran T0 from the production-enterprise default no matter which
+# -p was given, and upgrade-legacy.profile was never used by anything.
+PROFILE_ABS="$(cd "$(dirname "$PROFILE_PATH")" && pwd)/$(basename "$PROFILE_PATH")"
+
+emit_event upgrade_plan profile "$PROFILE_ABS" old_bin "$OLD_BIN" new_bin "$NEW_BIN" \
     target_ver "$TARGET_VER" outdir "$OUTDIR"
 
 if (( DRY_RUN )); then
@@ -103,7 +108,7 @@ if (( DRY_RUN )); then
     echo "DRY: gate_upgrade: rolling upgrade target binary=$NEW_BIN"
     echo "DRY: gate_upgrade: T5 compatibility_version bump -> $TARGET_VER"
     echo "DRY: gate_upgrade: cluster workspace=$OUTDIR"
-    echo "DRY: gate_upgrade: would call scenario_upgrade_run <outdir> <old_bin> <new_bin> <target_ver>"
+    echo "DRY: gate_upgrade: would call scenario_upgrade_run <outdir> $OLD_BIN $NEW_BIN $TARGET_VER $PROFILE_ABS"
     exit 0
 fi
 
@@ -113,7 +118,7 @@ mkdir -p "$OUTDIR"
 OUTDIR_ABS="$(cd "$OUTDIR" && pwd)"
 
 set +e
-scenario_upgrade_run "$OUTDIR_ABS" "$OLD_BIN" "$NEW_BIN" "$TARGET_VER"
+scenario_upgrade_run "$OUTDIR_ABS" "$OLD_BIN" "$NEW_BIN" "$TARGET_VER" "$PROFILE_ABS"
 rc=$?
 set -e
 

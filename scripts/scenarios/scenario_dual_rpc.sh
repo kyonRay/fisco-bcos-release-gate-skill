@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scenario_dual_rpc.sh — "dual_rpc" gate scenario family: deploy + call a minimal contract
-# through BOTH RPC surfaces FISCO-BCOS exposes (BCOS RPC :20200 via the console/tars path, Web3
+# through BOTH RPC surfaces FISCO-BCOS exposes (BCOS RPC :20200 via the node binary's `tx smoke`, Web3
 # RPC :8545 via curl eth_sendRawTransaction), verify each transaction's receipt status and call
 # return value, then sample stateRoot at the same height through both surfaces and feed both into
 # oracle_stateroot_decide (scripts/oracle_lib.sh, Task 5) — the two RPCs share one ledger and
@@ -19,15 +19,15 @@
 # Design: the "did the tx do what we expected" comparisons are pure functions
 # (_drpc_assert_receipt, _drpc_assert_return, both below) — the ONLY part exercised by this
 # repo's own tests, because they take their inputs as plain arguments and do no IO.
-# scenario_dual_rpc_run itself is live-chain-only IO (console + curl) and is NOT exercised by
+# scenario_dual_rpc_run itself is live-chain-only IO (fisco-bcos subcommands + curl) and is NOT exercised by
 # tests/scenario_dual_rpc_test.sh; SCENARIO_DRY=1 makes it print the steps it would take instead
 # of sending anything, which IS exercised.
 #
 # The two RPC paths do NOT deploy the same bytecode — they exercise the two flows independently,
 # per rpc-paths.md's own point that the two RPCs are not interchangeable:
-#   - BCOS RPC path (_drpc_bcos_deploy_and_call): deploys BCOS_CONTRACT_NAME (default "HelloWorld",
-#     the console's bundled demo contract) via `console.sh deploy`, calls its set(42), then get(),
-#     and asserts the round-tripped value.
+#   - BCOS RPC path (_drpc_bcos_deploy_and_call): `fisco-bcos tx smoke` deploys the binary's own
+#     HelloWorld, calls set(), reads get() back and checks it (bcos-ops Smoke.cpp); the scenario
+#     re-checks the set() receipt status itself and takes the settle height from that receipt.
 #   - Web3 RPC path (_drpc_web3_deploy_and_call): deploys the raw trivial "always returns 42" EVM
 #     bytecode below via a hand-signed eth_sendRawTransaction — no Solidity compile, no ABI
 #     encoding needed, since the deployed contract ignores calldata entirely:
@@ -47,26 +47,22 @@
 #   BCOS_RPC_URL           BCOS RPC endpoint (default http://127.0.0.1:20200)
 #   BCOS_GROUP_ID          group id for BCOS RPC's <groupID, nodeName, ...> JSON-RPC param
 #                          convention (default "group0", the AIR-mode default — see
-#                          JsonRpcInterface.h and the console's own "[group0]: /apps>" prompt)
+#                          JsonRpcInterface.h)
 #   WEB3_RPC_URL           Web3 RPC endpoint (default http://127.0.0.1:8545)
 #   WEB3_PRIVATE_KEY       hex private key of a FUNDED account to sign the Web3-side deploy+call
 #                          with. No default — a real run must supply one; see rpc-paths.md's
-#                          "Enable the Web3 path first" for how to fund one via the console's
-#                          addBalance (needs feature_balance on).
+#                          "Enable the Web3 path first"; apply_profile.sh funds it with
+#                          `balance add` when feature_balance is on (RG_FUND_ADDRESSES).
 #
-# GAP (documented assumption, verified only against a live chain — same honesty standard as
-# gate.sh's own real-run section): the BCOS-RPC deploy/call flow below drives the console via
-# `bash console.sh <cmd>` from CWD console/dist (matching ci-harnesses.md's own convention:
-# "in console/dist, with certs copied in") and parses its text output with grep/sed. Console
-# output formatting is not part of this skill's own interface contract, so that parsing is a
-# best-effort assumption, not a verified contract.
+# The BCOS-RPC flow parses the JSON `tx smoke` prints (bcos-ops Smoke.cpp: {ok, reason, steps:[{name,
+# ok, txHash, status, detail}], account}) through ops_lib.sh's helpers, which have their own unit
+# test against that shape. OPS_BIN / FISCO_BIN names the binary; NODE_DIR names the chain.
 
 SCENARIO_DRPC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Viem is imported by its bare specifier ("viem/accounts") but with node run from THIS skill's own
-# directory, because ESM resolves a bare specifier against the process CWD — and gate.sh runs from
-# the console directory (the console insists on being invoked from its own dir), where no
-# node_modules exists. Two dead ends already ruled out on a live run: NODE_PATH is ignored by ESM,
+# directory, because ESM resolves a bare specifier against the process CWD — and the engine's cwd is
+# the FISCO checkout (repo root), which is where node_modules/viem is installed. Two dead ends already ruled out on a live run: NODE_PATH is ignored by ESM,
 # and importing the absolute directory path fails with "Directory import ... is not supported"
 # because package subpath exports only apply to bare specifiers. So change the CWD instead — the
 # helper scripts below read everything from the environment, so their CWD is otherwise irrelevant.
@@ -156,21 +152,10 @@ _drpc_web3_state_root() {
     _drpc_json_hexfield "$resp" stateRoot
 }
 
-# _drpc_console <cmd...> — run one console.sh command from CONSOLE_DIR (default console/dist,
-# matching ci-harnesses.md) and print its raw stdout.
-_drpc_console() {
-    local console_dir="${CONSOLE_DIR:-console/dist}"
-    ( cd "$console_dir" && bash console.sh "$@" )
-}
-
-# _drpc_bcos_deploy_and_call <outdir> — BCOS RPC path: deploy the demo contract via the console,
-# call it, verify receipt status + return value with the pure functions above. Prints ONLY the
-# bare block height integer its call transaction landed at, on stdout — that's this function's
-# return contract (scenario_dual_rpc_run captures it via command substitution for the stateRoot
-# cross-check). Every human-progress/OK/diagnostic line therefore goes to STDERR (`>&2`, piped
-# through `tee -a "$log" >&2` where it's also logged) — NEVER to stdout, or the caller's
-# `bcos_height="$(_drpc_bcos_deploy_and_call ...)"` would capture multi-line text instead of an
-# integer and the `$(( ))` height-comparison arithmetic downstream would crash under `set -e`.
+# _drpc_bcos_deploy_and_call <outdir> — BCOS RPC path: `fisco-bcos tx smoke` deploys the binary's
+# built-in HelloWorld, calls set(), reads get() back and checks it (bcos-ops Smoke.cpp), signing as
+# the genesis admin. Prints ONLY the block height the set() landed at on stdout; every progress,
+# OK and FAIL line goes to stderr, so the caller can capture the height cleanly.
 _drpc_bcos_deploy_and_call() {
     # NOTE: outdir and log are declared in separate `local` statements deliberately — `local
     # outdir="$1" log="$outdir/x"` expands ALL of a single `local` statement's RHS values before
@@ -179,60 +164,34 @@ _drpc_bcos_deploy_and_call() {
     # its left. Verified live: that exact pattern throws "outdir: unbound variable" under -u.
     local outdir="$1"
     local log="$outdir/dual_rpc_bcos.log"
-    local deploy_out addr status height got
+    local out addr set_status got tx_hash receipt_out height
 
-    echo ">> scenario_dual_rpc: BCOS RPC (console, :${BCOS_RPC_URL:-http://127.0.0.1:20200}): deploy ${BCOS_CONTRACT_NAME:-HelloWorld}" | tee -a "$log" >&2
-    deploy_out="$(_drpc_console deploy "${BCOS_CONTRACT_NAME:-HelloWorld}")"
-    echo "$deploy_out" >> "$log"
-    # Anchor to the "contract address:" label, do NOT take the first 40-hex run in the output: the
-    # console prints "transaction hash: 0x<64 hex>" FIRST, and a 64-hex hash trivially contains a
-    # 40-hex prefix — an unanchored grep silently returns the truncated tx hash as the contract
-    # address. A live run did exactly that and then called set() on an address that never existed.
-    addr="$(printf '%s' "$deploy_out" | sed -E -n 's/.*contract address:[[:space:]]*(0x[0-9a-fA-F]{40}).*/\1/p' | head -n1)"
-    [[ -n "$addr" ]] || { echo "ERROR: scenario_dual_rpc: could not parse deployed contract address from console output" >&2; return 1; }
-
-    echo ">> scenario_dual_rpc: BCOS RPC: call set(42) on $addr" | tee -a "$log" >&2
-    local call_out
-    call_out="$(_drpc_console call "${BCOS_CONTRACT_NAME:-HelloWorld}" "$addr" set 42)"
-    echo "$call_out" >> "$log"
-    # -E (extended regex), not BRE `\+`/`\(...\)`/`\|` — BSD/macOS sed's basic-regex mode does
-    # not support `\+` (a GNU extension) and silently matches nothing instead of erroring, which
-    # is how this line first shipped broken; verified live against both GNU and BSD sed with -E.
-    status="$(printf '%s' "$call_out" | sed -E -n 's/.*status[^0-9x]*(0x[0-9a-fA-F]+|[0-9]+).*/\1/p' | head -n1)"
-    [[ -n "$status" ]] || { echo "ERROR: scenario_dual_rpc: could not parse a status field from console call output" | tee -a "$log" >&2; return 1; }
-    status="$((status))"
-    if ! _drpc_assert_receipt "$status" 0; then
-        echo "FAIL: scenario_dual_rpc: BCOS RPC set() receipt status=$status, expected 0" | tee -a "$log" >&2
+    echo ">> scenario_dual_rpc: BCOS RPC (fisco-bcos tx smoke against node0): deploy HelloWorld, set, get" | tee -a "$log" >&2
+    out="$(_ops_tx tx smoke 2>&1)" || true   # exit 2 means a step failed; the JSON says which
+    echo "$out" >> "$log"
+    if ! _ops_ok "$out"; then
+        echo "FAIL: scenario_dual_rpc: BCOS RPC path: tx smoke did not report ok (reason='$(_ops_json_top "$out" reason)'); the binary said:" | tee -a "$log" >&2
+        sed 's/^/         /' <<<"$out" >&2
         return 1
     fi
-
-    echo ">> scenario_dual_rpc: BCOS RPC: call get() on $addr" | tee -a "$log" >&2
-    # The console prints a constant call's result on its own labelled line and then closes the block
-    # with a rule and a trailing blank line, so `tail -n1` reads the blank line, not the value:
-    #     Return values:(42)
-    #     -------------------------------------------------------------
-    #     <blank>
-    # A live run reported get() as '' for exactly that reason. Anchor on the label instead.
-    local get_out
-    get_out="$(_drpc_console call "${BCOS_CONTRACT_NAME:-HelloWorld}" "$addr" get)"
-    echo "$get_out" >> "$log"
-    got="$(printf '%s' "$get_out" | sed -E -n 's/^Return values:\((.*)\)[[:space:]]*$/\1/p' | head -n1 | tr -d '[:space:]')"
-    if ! _drpc_assert_return "$got" "42"; then
-        echo "FAIL: scenario_dual_rpc: BCOS RPC get() returned '$got', expected '42'" | tee -a "$log" >&2
+    addr="$(_ops_smoke_contract "$out")"
+    [[ -n "$addr" ]] || { echo "ERROR: scenario_dual_rpc: tx smoke reported ok but its deploy step names no contract address" | tee -a "$log" >&2; return 1; }
+    set_status="$(_ops_smoke_step "$out" set status)"
+    [[ -n "$set_status" ]] || { echo "ERROR: scenario_dual_rpc: tx smoke reported ok but its set step has no status" | tee -a "$log" >&2; return 1; }
+    if ! _drpc_assert_receipt "$set_status" 0; then
+        echo "FAIL: scenario_dual_rpc: BCOS RPC set() receipt status=$set_status, expected 0" | tee -a "$log" >&2
         return 1
     fi
-    echo "OK: scenario_dual_rpc: BCOS RPC path (status=0 return=42)" | tee -a "$log" >&2
+    got="$(_ops_smoke_step "$out" get detail)"
+    echo "OK: scenario_dual_rpc: BCOS RPC path (contract $addr, set status=0, get()='$got')" | tee -a "$log" >&2
 
-    # The console's `call` output carries the transaction hash and status but NO block number, so
-    # the height has to come from the receipt. (The previous `block number` grep matched nothing on
-    # every real run — it was reading a line the console does not print.)
-    local tx_hash receipt_out
-    tx_hash="$(printf '%s' "$call_out" | sed -E -n 's/^transaction hash:[[:space:]]*(0x[0-9a-fA-F]{64}).*/\1/p' | head -n1)"
-    [[ -n "$tx_hash" ]] || { echo "ERROR: scenario_dual_rpc: could not parse the transaction hash from console call output" | tee -a "$log" >&2; return 1; }
-    receipt_out="$(_drpc_console getTransactionReceipt "$tx_hash")"
+    # The height the set() landed at, for the stateRoot cross-check below: from its receipt.
+    tx_hash="$(_ops_smoke_step "$out" set txHash)"
+    [[ -n "$tx_hash" ]] || { echo "ERROR: scenario_dual_rpc: tx smoke's set step has no txHash" | tee -a "$log" >&2; return 1; }
+    receipt_out="$(_ops_read tx get "$tx_hash" 2>&1)" || true
     echo "$receipt_out" >> "$log"
-    height="$(printf '%s' "$receipt_out" | sed -E -n 's/.*"blockNumber"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -n1)"
-    [[ -n "$height" ]] || { echo "ERROR: scenario_dual_rpc: could not parse blockNumber from getTransactionReceipt $tx_hash" | tee -a "$log" >&2; return 1; }
+    height="$(printf '%s' "$receipt_out" | sed -E -n 's/.*"blockNumber"[[:space:]]*:[[:space:]]*"?([0-9]+)"?.*/\1/p' | head -n1)"
+    [[ -n "$height" ]] || { echo "ERROR: scenario_dual_rpc: could not parse blockNumber from tx get $tx_hash" | tee -a "$log" >&2; return 1; }
     echo "$height"
 }
 
@@ -357,9 +316,8 @@ _drpc_web3_sign() {
 # _drpc_dry — print the steps SCENARIO_DRY=1 would take, one per RPC path, without sending
 # anything. This is the only branch of this scenario exercised outside a live chain.
 _drpc_dry() {
-    echo "DRY: scenario_dual_rpc: BCOS RPC (${BCOS_RPC_URL:-http://127.0.0.1:20200}): console deploy ${BCOS_CONTRACT_NAME:-HelloWorld}"
-    echo "DRY: scenario_dual_rpc: BCOS RPC: console call set(42), verify receipt status via _drpc_assert_receipt"
-    echo "DRY: scenario_dual_rpc: BCOS RPC: console call get(), verify return value via _drpc_assert_return"
+    echo "DRY: scenario_dual_rpc: BCOS RPC (${BCOS_RPC_URL:-http://127.0.0.1:20200}): fisco-bcos tx smoke — deploy HelloWorld, set, get, signed as the genesis admin"
+    echo "DRY: scenario_dual_rpc: BCOS RPC: verify the set step's receipt status via _drpc_assert_receipt, read the settle height from its receipt (tx get)"
     echo "DRY: scenario_dual_rpc: Web3 RPC (${WEB3_RPC_URL:-http://127.0.0.1:8545}): sign+curl eth_sendRawTransaction deploy 'return 42' bytecode"
     echo "DRY: scenario_dual_rpc: Web3 RPC: curl eth_getTransactionReceipt, verify status via _drpc_assert_receipt"
     echo "DRY: scenario_dual_rpc: Web3 RPC: curl eth_call, verify return value via _drpc_assert_return"
@@ -380,6 +338,7 @@ scenario_dual_rpc_run() {
     # Sourced here, not at file scope — see the SCENARIO_DRPC_ORACLE_LIB comment above. Only
     # reached on a real run, never by SCENARIO_DRY=1 or by merely sourcing this file.
     source "$SCENARIO_DRPC_ORACLE_LIB"
+    source "$SCENARIO_DRPC_DIR/../ops_lib.sh"
 
     mkdir -p "$outdir"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The [system_config_replay] section is replayed verbatim, one console call at a time, and the
+# The [system_config_replay] section is replayed verbatim, one `sysconfig set` at a time, and the
 # chain enforces a dependency chain on the balance flags (Features.cpp:37-46). Both halves of that
 # are regression-tested here: the parser must emit keys in FILE order (an associative array alone
 # gives bash hash order, which differs across machines), and the production profile's own order

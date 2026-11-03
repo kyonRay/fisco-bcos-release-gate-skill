@@ -12,7 +12,9 @@
 #   T2-T4 rolling binary swap     stop one node -> atomically swap the shared binary (same-dir
 #                                  temp + mv, never a bare cp onto the live target) -> restart ->
 #                                  sample height+hash from 3 nodes -> _upg_no_fork -> repeat per node
-#   T5  bump data version         console setSystemConfigByKey compatibility_version <target_ver>
+#   T5  bump data version         fisco-bcos sysconfig set compatibility_version <target_ver>
+#                                  (a committee proposal on a governance chain, routed by the
+#                                  binary itself), then read back and compared
 #   T6  flag-flip assertion       re-read each target-version flag, _upg_flag_flipped(before,after)
 #   T7  re-run gate               one-shot oracle pass again, must stay consistent with T1
 #   T8  downgrade refusal         only if UPGRADE_ROLLBACK=1: ask the chain to set
@@ -40,7 +42,7 @@
 # _upg_swap_node_binary do real file/process IO (mktemp/cp/mv, stop.sh/start.sh) but against a
 # throwaway tmpdir fixture rather than a live chain, so tests/upgrade_swap_test.sh exercises them
 # for real too — see that file. scenario_upgrade_run itself is live-chain-only IO (apply_profile.sh
-# + console + curl + oracle_*.sh) and is NOT exercised by tests, other than its SCENARIO_DRY=1
+# + fisco-bcos subcommands + curl + oracle_*.sh) and is NOT exercised by tests, other than its SCENARIO_DRY=1
 # branch (prints the T0-T8 plan, sends nothing).
 #
 # Flag-derivation source of truth: this deliberately greps
@@ -73,9 +75,9 @@
 #     on the block object) are a best-effort assumption parsed with sed, not independently
 #     verified against a live response — same honesty standard as scenario_dual_rpc.sh's own
 #     stateRoot field parsing.
-#   - console getSystemConfigByKey's output for an unset flag is assumed to end in a literal
-#     "null" line, matching version-upgrade.md's documented listSystemConfigs convention
-#     ("Value = null (or 0) means off").
+#   - `sysconfig get` on a flag that was never set is a JSON-RPC error (3008, no such entry) and
+#     exits 1; _upg_get_config_value reports that as the empty string, which is the "null"
+#     _upg_flag_flipped treats as "off before the bump".
 #
 # Env:
 #   SCENARIO_DRY=1     print the T0-T8 plan (including the live-derived target-version flag list)
@@ -86,7 +88,10 @@
 #   BCOS_RPC_BASE_PORT base BCOS RPC port; node<i> is assumed to listen on BASE+i (default 20200).
 #   BCOS_GROUP_ID      group id for the <groupID, nodeName, ...> JSON-RPC param convention
 #                      (default "group0").
-#   CONSOLE_DIR        console.sh working directory (default console/dist).
+#   OPS_BIN            the fisco-bcos binary whose subcommands drive the chain (sysconfig set/get).
+#                      Defaults to <new_bin> for the whole timeline: T0/T1 run against the OLD
+#                      binary's chain, which has no subcommands of its own, and new_bin reaches it
+#                      over plain JSON-RPC (--node-dir falls back to the RPC port with no socket).
 #   UPGRADE_ROLLBACK   1 to also run the optional T8 downgrade-refusal step (default 0: T8 is
 #                      skipped, not failed). The name is kept for the host's upgrade.rollback key.
 
@@ -152,20 +157,21 @@ _upg_t0_apply_argv() {
 
 # _upg_find_repo_root — walk up from this script's own dir (not $PWD) looking for the same repo
 # marker scenario_ut.sh's own scenario_ut_find_repo_root uses, so this is cwd-independent too.
-# _upg_downgrade_refused <console_out> <readback> <target_ver> — T8's verdict, pure. Return 0 only
+# _upg_downgrade_refused <ops_out> <readback> <target_ver> — T8's verdict, pure. Return 0 only
 # when BOTH hold: the value read back through listSystemConfigs is still <target_ver>, AND the
-# console's output shows the chain refused for the VERSION RULE — the direct path's envelope carries
+# subcommand's JSON shows the chain refused for the VERSION RULE — the direct path's result carries
 # SystemConfigPrecompiled's own message ("Set compatibility version should not lower than version
-# nowadays.", SystemConfigPrecompiled.cpp), the committee path's a "Proposal Status : failed" line.
+# nowadays.", SystemConfigPrecompiled.cpp) in the JSON's "message"; a committee path that executed
+# and reverted shows a non-zero "execCode" (bcos-ops PresetCall.cpp) or a failed/rejected statusName.
 # The readback alone is not enough: a governance chain whose proposal is still pending, a java-sdk
 # that rejected the version string client-side, or a direct call refused for permissions all leave
 # the version unchanged without the rule ever having been exercised. Anything else returns 1 and
-# the caller prints the console's output, so a wording this pattern does not know fails loudly
+# the caller prints the subcommand's output, so a wording this pattern does not know fails loudly
 # rather than passing quietly.
 _upg_downgrade_refused() {
     local out="$1" readback="$2" target="$3"
     [[ "$readback" == "$target" ]] || return 1
-    grep -qE 'should not lower|Proposal Status[[:space:]]*:[[:space:]]*failed' <<<"$out"
+    grep -qE 'should not lower|"execCode": *[1-9]|"statusName": *"(failed|rejected)"' <<<"$out"
 }
 
 _upg_find_repo_root() {
@@ -239,31 +245,13 @@ _upg_target_flags() {
 # called from this repo's tests.
 # ---------------------------------------------------------------------------
 
-_upg_console() {
-    local console_dir="${CONSOLE_DIR:-console/dist}"
-    (cd "$console_dir" && bash console.sh "$@")
-}
-
-# _upg_get_config_value <key> — console getSystemConfigByKey <key>, print the trimmed last
-# non-empty line (see header GAP note on console output parsing).
+# _upg_get_config_value <key> — `fisco-bcos sysconfig get <key>`'s value, or the empty string when
+# the chain has no such entry (a flag that was never set answers 3008 and the command exits 1 —
+# exactly the pre-bump state T6 wants to snapshot).
 _upg_get_config_value() {
-    local key="$1" out val
-    # Read through listSystemConfigs, NOT getSystemConfigByKey. Two live-run reasons:
-    #   1. A bugfix flag that has never been set has no entry, and getSystemConfigByKey answers
-    #      {"code":3008,"msg":"Entry: bugfix_auth_check does not exists!"} instead of a value —
-    #      but the pre-bump snapshot is exactly the case T6 needs to read.
-    #   2. listSystemConfigs prints one table row per key, "| bugfix_auth_check | null | 0 |",
-    #      which covers set and unset alike.
-    # The previous `tail -n1` also could not have worked either way: the console closes its output
-    # with "}" and a blank line, so every flag read back as "}" and T6 compared "}" to "}" — the
-    # same trailing-line trap scenario_dual_rpc's get() fell into.
-    out="$(_upg_console listSystemConfigs 2>/dev/null)"
-    val="$(printf '%s' "$out" | awk -F'|' -v k="$key" '
-        {
-            gsub(/^[ \t]+|[ \t]+$/, "", $2)
-            if ($2 == k) { gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3; exit }
-        }')"
-    printf '%s' "$val" | tr -d '[:space:]'
+    local key="$1" out
+    out="$(_ops_read sysconfig get "$key" 2>/dev/null)" || { printf ''; return 0; }
+    _ops_json_top "$out" value | tr -d '[:space:]'
 }
 
 # _upg_discover_pids — print live fisco-bcos node PIDs, one per line, discovered via pgrep against
@@ -424,13 +412,13 @@ _upg_dry() {
             flags_str="$(printf '%s' "$flags_output" | tr '\n' ' ')"
         fi
     fi
-    echo "DRY: scenario_upgrade: T0 reproduce prod: FISCO_BIN=$old_bin apply_profile.sh -p $profile_path -o <outdir>"
+    echo "DRY: scenario_upgrade: T0 reproduce prod: FISCO_BIN=$old_bin OPS_BIN=$new_bin apply_profile.sh -p $profile_path -o <outdir>"
     echo "DRY: scenario_upgrade: T1 baseline gate: one-shot crash/liveness/stateroot oracle pass; snapshot pre-bump value of each target flag"
     echo "DRY: scenario_upgrade: T2-T4 rolling binary swap: per node, stop -> swap $old_bin -> $new_bin -> start -> sample 3 nodes' height+hash -> _upg_no_fork"
-    echo "DRY: scenario_upgrade: T5 bump data version: console setSystemConfigByKey compatibility_version $target_ver"
+    echo "DRY: scenario_upgrade: T5 bump data version: OPS_BIN=$new_bin fisco-bcos sysconfig set compatibility_version $target_ver (proposal on a governance chain), then sysconfig get must read it back"
     echo "DRY: scenario_upgrade: T6 flag-flip assertion: for each of [$flags_str], _upg_flag_flipped(before,after)"
     echo "DRY: scenario_upgrade: T7 re-run gate: one-shot oracle pass again, compare against T1"
-    echo "DRY: scenario_upgrade: T8 optional downgrade refusal (UPGRADE_ROLLBACK=1 only): console setSystemConfigByKey compatibility_version <profile genesis value>; chain must refuse (_upg_downgrade_refused) and pass the oracle triad after"
+    echo "DRY: scenario_upgrade: T8 optional downgrade refusal (UPGRADE_ROLLBACK=1 only): fisco-bcos sysconfig set compatibility_version <profile genesis value>; chain must refuse (_upg_downgrade_refused) and pass the oracle triad after"
 }
 
 # scenario_upgrade_run <outdir> <old_bin> <new_bin> <target_ver> [profile_path] — execute the
@@ -440,7 +428,7 @@ _upg_dry() {
 # in here, since this function itself only ever consumes an already-resolved path. Live-chain-only:
 # needs a fisco-bcos checkout with a completed build (both binaries), a running BCOS RPC cluster
 # reproduced by T0 FROM old_bin (not this build-dir's own default binary — see _upg_t0_apply_argv),
-# and console.sh. Returns 1 if any non-optional T-step fails; T8 is skipped (not failed) unless
+# and a binary with subcommands (OPS_BIN). Returns 1 if any non-optional T-step fails; T8 is skipped (not failed) unless
 # UPGRADE_ROLLBACK=1.
 scenario_upgrade_run() {
     local outdir="${1:-.}"
@@ -458,6 +446,9 @@ scenario_upgrade_run() {
         echo "ERROR: scenario_upgrade_run requires <outdir> <old_bin> <new_bin> <target_ver>" >&2
         return 1
     }
+    # The chain starts on old_bin, which (3.17 and earlier) has no subcommands; new_bin's drive the
+    # whole timeline, over plain JSON-RPC until the swap and over the local socket after it.
+    export OPS_BIN="${OPS_BIN:-$new_bin}"
     [[ -x "$old_bin" ]] || {
         echo "ERROR: scenario_upgrade: old_bin not executable: $old_bin" >&2
         return 1
@@ -541,6 +532,7 @@ scenario_upgrade_run() {
     # SCENARIO_DRPC_ORACLE_LIB source uses (see its comment): only reached on a real run, never by
     # SCENARIO_DRY=1 or by merely sourcing this file.
     source "$SCENARIO_UPG_DIR/../oracle_lib.sh"
+    source "$SCENARIO_UPG_DIR/../ops_lib.sh"
     # profile_load is still needed here: PROFILE_GENESIS[compatibility_version] is read later
     # (see the comment at that use site) and this is the only profile_load call in this function.
     profile_load "$profile_path"
@@ -613,40 +605,17 @@ scenario_upgrade_run() {
     done
 
     echo "-- scenario_upgrade: T5 bump data version to $target_ver"
-    # The console exits 0 even when the chain refused the call, so checking $? alone let T5 report
-    # success having changed nothing: against the production profile (auth_check_status=1) the chain
-    # answers {"code":-50000,"msg":"Permission denied"} — "Maybe you should use 'setSysConfigProposal'"
-    # — because committee governance is on. T6 then compared unset flags against unset flags and T7
-    # found itself "consistent with T1", producing a complete, plausible upgrade run in which no
-    # upgrade happened. Demand the success envelope, and say which governance path is needed.
-    #
-    # Two paths, because the profile decides which one the chain accepts. Without governance the
-    # direct call works; with auth_check_status=1 it is refused and the bump must be a committee
-    # proposal. Try direct first, fall back on "Permission denied" — that keeps the non-governance
-    # profiles on the simpler path and needs no per-profile configuration.
-    local t5_out t5_rc=0
-    t5_out="$(_upg_console setSystemConfigByKey compatibility_version "$target_ver" 2>&1)" || t5_rc=$?
-    if [[ "$t5_rc" == 0 ]] && grep -qE '"code"[[:space:]]*:[[:space:]]*0' <<<"$t5_out"; then
-        echo "OK: scenario_upgrade: T5 bumped compatibility_version to $target_ver (direct)"
-    elif grep -q "Permission denied" <<<"$t5_out"; then
-        echo ">> scenario_upgrade: T5 direct set refused (governance on) — retrying as a committee proposal"
-        t5_rc=0
-        t5_out="$(_upg_console setSysConfigProposal compatibility_version "$target_ver" 2>&1)" || t5_rc=$?
-        # A single governor at 0% thresholds makes the proposal execute immediately, so success is
-        # "Proposal Status : finished" — NOT a {"code":0} envelope, which this command never prints.
-        # The console then tries to refresh its cached group info and may print
-        # "Switch to group group0 failed"; that is after the fact and must not be read as failure.
-        if [[ "$t5_rc" != 0 ]] || ! grep -q "Proposal Status *: *finished" <<<"$t5_out"; then
-            echo "FAIL: scenario_upgrade: T5 committee proposal for compatibility_version=$target_ver did not finish — the chain was NOT upgraded, so T6/T7 below assert nothing." >&2
-            sed 's/^/         /' <<<"$t5_out" >&2
-            grep -q "please check valid range" <<<"$t5_out" && \
-                echo "       This is java-sdk 3.8.0's AuthManager rejecting the version string (its EnumNodeVersion stops at 3.7.0). Build java-sdk from branch release-3.9.0 and put its jar plus its jackson 2.20 dependencies in the console's lib/." >&2
-            rc=1
-        else
-            echo "OK: scenario_upgrade: T5 bumped compatibility_version to $target_ver (committee proposal)"
-        fi
+    # `sysconfig set` routes itself: a direct precompiled call on a plain chain, a committee proposal
+    # on a governance chain (bcos-ops TxContext.cpp) — the profile decides, no per-profile switch
+    # here. ok alone is not the verdict, because a proposal still voting also reports ok: the value
+    # is read back and must equal the target, otherwise T6/T7 below would assert nothing.
+    local t5_out t5_after
+    t5_out="$(_ops_write sysconfig set compatibility_version "$target_ver" 2>&1)" || true
+    t5_after="$(_upg_get_config_value compatibility_version)"
+    if _ops_ok "$t5_out" && [[ "$t5_after" == "$target_ver" ]]; then
+        echo "OK: scenario_upgrade: T5 bumped compatibility_version to $target_ver ($(_ops_json_top "$t5_out" mode))"
     else
-        echo "FAIL: scenario_upgrade: T5 compatibility_version bump to $target_ver did not report success — the chain was NOT upgraded, so T6/T7 below assert nothing." >&2
+        echo "FAIL: scenario_upgrade: T5 compatibility_version bump to $target_ver did not land (read back '$t5_after') — the chain was NOT upgraded, so T6/T7 below assert nothing. The binary said:" >&2
         sed 's/^/         /' <<<"$t5_out" >&2
         rc=1
     fi
@@ -693,14 +662,13 @@ scenario_upgrade_run() {
     if [[ "${UPGRADE_ROLLBACK:-0}" == 1 ]]; then
         echo "-- scenario_upgrade: T8 downgrade refusal"
         # This step used to be called "rollback": swap the binaries back and set
-        # compatibility_version back to the genesis value, with the console's output sent to
+        # compatibility_version back to the genesis value, with the console's (then) output sent to
         # /dev/null. The chain refuses every such set (SystemConfigPrecompiled.cpp: "Set
         # compatibility version should not lower than version nowadays"), so the step could never
         # succeed and never showed why. What IS a production invariant is the refusal itself, so
         # that is what T8 asserts now: the version stays at target_ver, and the chain is still
-        # healthy afterwards. Governance chains refuse the direct call with "Permission denied" for
-        # a reason that has nothing to do with the version, so the proposal path is used there, the
-        # same way T5 does it.
+        # healthy afterwards. On a governance chain the write is a proposal (routed by the binary,
+        # as in T5), so what gets refused is the version rule, not a permission check.
         # PROFILE_GENESIS was already populated by the profile_load call above.
         local orig_compat="${PROFILE_GENESIS[compatibility_version]:-}"
         local t8_out="" t8_now t8_after
@@ -715,11 +683,9 @@ scenario_upgrade_run() {
             # the chain never reached would test nothing.
             echo "SKIP: scenario_upgrade: T8 chain reads compatibility_version '$t8_now', not $target_ver — T5 did not land, so there is no downgrade to refuse"
         else
-            t8_out="$(_upg_console setSystemConfigByKey compatibility_version "$orig_compat" 2>&1)" || true
-            if grep -q "Permission denied" <<<"$t8_out"; then
-                echo ">> scenario_upgrade: T8 direct set refused by governance — retrying as a committee proposal so the version rule itself is what gets tested"
-                t8_out="$(_upg_console setSysConfigProposal compatibility_version "$orig_compat" 2>&1)" || true
-            fi
+            # Same routing as T5: a proposal on a governance chain, so the version rule itself is
+            # what gets exercised rather than a permission check.
+            t8_out="$(_ops_write sysconfig set compatibility_version "$orig_compat" 2>&1)" || true
             t8_after="$(_upg_get_config_value compatibility_version)"
             if _upg_downgrade_refused "$t8_out" "$t8_after" "$target_ver"; then
                 echo "OK: scenario_upgrade: T8 downgrade $target_ver -> $orig_compat refused by the version rule; compatibility_version still $t8_after"

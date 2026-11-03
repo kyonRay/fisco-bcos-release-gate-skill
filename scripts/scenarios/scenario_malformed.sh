@@ -18,7 +18,7 @@
 # scenario_dual_rpc.sh's convention exactly.
 #
 # Design: _mal_verdict is a pure function (no IO) — the ONLY part of this file exercised by
-# tests/scenario_malformed_test.sh. scenario_malformed_run itself is live-chain-only IO (console
+# tests/scenario_malformed_test.sh. scenario_malformed_run itself is live-chain-only IO (fisco-bcos tx smoke
 # + curl + oracle_crash.sh) and is NOT exercised by tests, other than its SCENARIO_DRY=1 branch
 # (prints the case plan, sends nothing).
 #
@@ -53,10 +53,8 @@
 #   BCOS_RPC_URL       BCOS RPC endpoint (default http://127.0.0.1:20200)
 #   BCOS_GROUP_ID      group id for the <groupID, nodeName, ...> param convention (default
 #                      "group0")
-#   BCOS_CONTRACT_NAME contract deployed by the positive control via the console (default
-#                      "HelloWorld", matching scenario_dual_rpc.sh's own default)
-#   CONSOLE_DIR        console.sh working directory (default console/dist, matching
-#                      ci-harnesses.md)
+#   OPS_BIN / FISCO_BIN  the fisco-bcos binary whose `tx smoke` subcommand is the positive control
+#                      (deploys the binary's own HelloWorld; see ops_lib.sh)
 
 SCENARIO_MAL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -89,33 +87,28 @@ _mal_verdict() {
 # IO helpers — live-chain-only, never called from SCENARIO_DRY=1 or from this repo's tests.
 # ---------------------------------------------------------------------------
 
-# _mal_console <cmd...> — run one console.sh command from CONSOLE_DIR and print its raw stdout.
-# Same shape as scenario_dual_rpc.sh's _drpc_console, duplicated rather than sourced to keep this
-# scenario from depending on that script's internal (non-interface) function name.
-_mal_console() {
-    local console_dir="${CONSOLE_DIR:-console/dist}"
-    (cd "$console_dir" && bash console.sh "$@")
-}
-
-# _mal_positive_control <outdir> <case_name> — deploy the default contract via the console to
-# confirm the RPC channel works BEFORE sending the tampered tx for this case. Prints ONLY the
-# deployed contract address on stdout (unused by the caller today, kept for parity with
-# scenario_dual_rpc.sh's stdout-purity convention); every progress/OK/ERROR line goes to stderr.
+# _mal_positive_control <outdir> <case_name> — `fisco-bcos tx smoke` (deploy HelloWorld, set, get,
+# signing as the genesis admin) to confirm the RPC channel works BEFORE sending the tampered tx for
+# this case. Prints ONLY the deployed contract address on stdout (unused by the caller today, kept
+# for parity with scenario_dual_rpc.sh's stdout-purity convention); every progress/OK/ERROR line
+# goes to stderr.
 _mal_positive_control() {
     local outdir="$1"
     local case_name="$2"
     local log="$outdir/malformed_${case_name}.log"
     local out addr
 
-    echo ">> scenario_malformed: [$case_name] positive control: console deploy ${BCOS_CONTRACT_NAME:-HelloWorld} (confirm channel works before tampering)" | tee -a "$log" >&2
-    out="$(_mal_console deploy "${BCOS_CONTRACT_NAME:-HelloWorld}")"
+    echo ">> scenario_malformed: [$case_name] positive control: fisco-bcos tx smoke (confirm the channel works before tampering)" | tee -a "$log" >&2
+    out="$(_ops_tx tx smoke 2>&1)" || true
     echo "$out" >>"$log"
-    # Anchored on the "contract address:" label for the same reason scenario_dual_rpc.sh is: the
-    # console prints the 64-hex transaction hash first, whose 40-hex prefix an unanchored grep
-    # happily returns as the contract address.
-    addr="$(printf '%s' "$out" | sed -E -n 's/.*contract address:[[:space:]]*(0x[0-9a-fA-F]{40}).*/\1/p' | head -n1)"
+    if ! _ops_ok "$out"; then
+        echo "ERROR: scenario_malformed: [$case_name] positive control failed — tx smoke did not report ok (reason='$(_ops_json_top "$out" reason)'); channel may be down. The binary said:" | tee -a "$log" >&2
+        sed 's/^/         /' <<<"$out" >&2
+        return 1
+    fi
+    addr="$(_ops_smoke_contract "$out")"
     if [[ -z "$addr" ]]; then
-        echo "ERROR: scenario_malformed: [$case_name] positive control failed — could not parse a deployed contract address from console output; channel may be down" | tee -a "$log" >&2
+        echo "ERROR: scenario_malformed: [$case_name] positive control reported ok but named no deployed contract address" | tee -a "$log" >&2
         return 1
     fi
     echo "OK: scenario_malformed: [$case_name] positive control succeeded (deployed $addr)" | tee -a "$log" >&2
@@ -153,7 +146,7 @@ _mal_dry() {
         name="${case_entry%%:*}"
         desc="${case_entry#*:}"
         echo "DRY: scenario_malformed: case '$name' ($desc)"
-        echo "DRY: scenario_malformed:   1) positive control: console deploy ${BCOS_CONTRACT_NAME:-HelloWorld}, confirm channel works"
+        echo "DRY: scenario_malformed:   1) positive control: fisco-bcos tx smoke (deploy HelloWorld, set, get), confirm channel works"
         echo "DRY: scenario_malformed:   2) craft tampered tx via TAMPER_HELPER '$name' (byte-tampering.md recipe: decode -> flip field -> re-encode)"
         echo "DRY: scenario_malformed:   3) curl sendTransaction the tampered hex, check for a rejection response"
         echo "DRY: scenario_malformed:   4) oracle_crash --once probe: confirm node still alive"
@@ -174,6 +167,8 @@ scenario_malformed_run() {
         return 0
     fi
 
+    # Sourced here, not at file scope — only a real run needs the subcommands.
+    source "$SCENARIO_MAL_DIR/../ops_lib.sh"
     mkdir -p "$outdir"
 
     local pids=()

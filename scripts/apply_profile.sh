@@ -7,7 +7,7 @@
 #     -o  output dir for the generated cluster         (default ./nodes-release-gate)
 #     --dry-run  print the plan to stdout and exit — no build_chain, no cluster_up.sh, no network.
 #                Prints: (1) the build_chain invocation incl. compatibility_version, (2) the
-#                config.ini patch lines from [config_ini_override], (3) one setSystemConfigByKey
+#                config.ini patch lines from [config_ini_override], (3) one `sysconfig set`
 #                line per [system_config_replay] pair. Flags absent from the profile are never
 #                invented or emitted.
 #     -h  print this help and exit
@@ -16,6 +16,9 @@
 #     FISCO_BIN   specific fisco-bcos binary for cluster_up.sh -e (default: cluster_up.sh's own)
 #     WEB3_BASE   Web3 RPC base port for cluster_up.sh -w; OUTRANKS the profile's own captured
 #                 web3_rpc.listen_port in the later config.ini patch too (default: 8545)
+#     OPS_BIN     the fisco-bcos binary whose subcommands (sysconfig / balance, bcos-ops) replay
+#                 the profile in step 4 (default: FISCO_BIN). Only the upgrade timeline sets it
+#                 separately: its T0 chain runs an old binary that has no subcommands.
 #
 # Real-run (no --dry-run; needs a live fisco-bcos binary — NOT exercised by this skill's own
 # tests, since there is no binary in this environment):
@@ -26,7 +29,9 @@
 #      whatever WEB3_BASE-derived port step 1 already set; every other listen_port key gets the
 #      profile's own base+i renumbering).
 #   3. The cluster is restarted so the config.ini patch takes effect.
-#   4. Each [system_config_replay] pair is replayed via the Java console's setSystemConfigByKey.
+#   4. Each [system_config_replay] pair is written with `fisco-bcos sysconfig set` (signing as the
+#      genesis admin key build_chain wrote to <outdir>/ca/accounts) and READ BACK with
+#      `sysconfig get`; a value that does not read back as written fails the bring-up.
 set -euo pipefail
 
 # Requires bash 4+ (profile_lib.sh uses associative arrays). Fail clearly instead of a cryptic
@@ -167,12 +172,12 @@ if [[ "$DRY_RUN" == 1 ]]; then
         fi
     done < <(profile_config_pairs)
     echo ""
-    echo "[3/3] console replay (from [system_config_replay]):"
+    echo "[3/3] sysconfig replay (fisco-bcos sysconfig set, then sysconfig get read-back; from [system_config_replay]):"
     while read -r pair; do
         [[ -z "$pair" ]] && continue
         key="${pair%% *}"
         value="${pair#* }"
-        echo "  setSystemConfigByKey ${key} ${value}"
+        echo "  sysconfig set ${key} ${value}"
     done < <(profile_replay_pairs)
     exit 0
 fi
@@ -203,8 +208,7 @@ echo ">> [1/4] cluster_up (needs live chain): build_chain + start_all into $OUTD
 # the "GAP: no compatibility_version passthrough" limitation this comment used to describe here is
 # now closed.
 bash "$CLUSTER_UP" "${APPLY_CU_ARGS[@]}"
-# Absolute from here on: step 4 runs the console from ITS OWN directory (see _console_prepare), and
-# a relative outdir would resolve against the console's location instead of the caller's.
+# Absolute from here on: NODE_DIR is what every subcommand and scenario is pointed at.
 OUTDIR="$(cd "$OUTDIR" && pwd)"
 NODE_DIR="$OUTDIR/127.0.0.1"
 
@@ -264,157 +268,71 @@ echo ">> [3/4] restarting cluster to pick up config.ini patch (needs live chain)
 bash "$NODE_DIR/stop_all.sh"
 bash "$NODE_DIR/start_all.sh"
 
-# _fund_console_account — give the account the console signs with a balance, so that every
-# transaction issued after tx_gas_price goes non-zero can actually pay for its gas. Mirrors
-# tools/.ci/java_sdk_demo_ci_test.sh's own sequence (feature_balance -> feature_balance_precompiled
-# -> addBalance, lines 134/232-241): build_chain writes the genesis auth-admin account — which is
-# also the registered balanceGovernor, and addBalance accepts no one else — into
-# <outdir>/ca/accounts/, and the console picks its signing account up from account/ecdsa/.
-# Called from the replay loop the moment feature_balance_precompiled is enabled, which the
-# profile's own key order guarantees is before tx_gas_price is set.
-_fund_console_account() {
-    local accounts_dir="$OUTDIR/ca/accounts"
+source "$SCRIPT_DIR/ops_lib.sh"
+
+# _fund_accounts — give the admin (it signs every write below) and every address the caller's
+# scenarios spend from a balance, so transactions can pay for gas once tx_gas_price is non-zero.
+# Mirrors tools/.ci/ci_check_air.sh's own sequence (feature_balance -> feature_balance_precompiled
+# -> balance add, signed with the governor pem). Called from the replay loop the moment
+# feature_balance_precompiled is enabled, which the profile's own key order guarantees is before
+# tx_gas_price is set.
+_fund_accounts() {
     # tools/.ci/java_sdk_demo_ci_test.sh funds 1e10, but that CI chain never sets tx_gas_price, so
-    # gas is free there. Under the production profile (tx_gas_price 21000) a single 500000-gas
-    # deploy costs 1.05e10 — just over CI's figure, and the transaction is rejected with
+    # gas is free there. Under the production profile (tx_gas_price 0x5208) a single 500000-gas
+    # deploy costs 1.05e10 -- just over CI's figure, and the transaction is rejected with
     # {"code":-32603,"message":"InsufficientFunds"}. Fund with headroom instead of the CI number.
     local amount="${RG_FUND_AMOUNT:-1000000000000000000}"
-    local gov pem out rc=0
-
-    [[ -d "$accounts_dir" ]] || {
-        echo "ERROR: apply_profile: $accounts_dir not found — cannot fund the console account, and every later transaction would fail with 'Not enough cash' once tx_gas_price is non-zero." >&2
-        return 1
-    }
-
-    # The governor address is the pem's own filename, so take it from disk rather than parsing
-    # console output: `listAccount` prints "0x..(current account) <=", address BEFORE the label,
-    # and the console's default account is a freshly RANDOM one (see config.toml [account]
-    # accountAddress: "Default is a randomly generated account") — which is not the governor and
-    # therefore cannot call addBalance at all.
-    for pem in "$accounts_dir"/*.pem; do
-        [[ -f "$pem" ]] || continue
-        [[ "$pem" == *.pub.pem || "$pem" == *.public.pem ]] && continue
-        gov="$(basename "$pem" .pem)"
-        [[ "$gov" =~ ^0x[0-9a-fA-F]{40}$ ]] && break
-        gov=""
-    done
-    [[ -n "$gov" ]] || {
-        echo "ERROR: apply_profile: no 0x<40hex>.pem account found in $accounts_dir" >&2
-        return 1
-    }
-
-    mkdir -p account/ecdsa
-    cp -r "$accounts_dir"/* account/ecdsa/
-    # Pin the console to that account. Without this the console signs as its own random account and
-    # addBalance is rejected — only the registered balanceGovernor (the genesis auth_admin account,
-    # which is this pem) may call it.
-    ADDR="$gov" perl -0pi -e 's{^[#[:space:]]*accountAddress\s*=.*$}{accountAddress = "$ENV{ADDR}"}m' conf/config.toml
-    echo "  pinned console accountAddress = $gov (genesis auth_admin / balanceGovernor)"
-
-    # Confirm the console actually adopted it before spending a transaction on the assumption.
-    out="$(bash console.sh listAccount 2>&1)" || rc=$?
-    if [[ "$rc" != 0 ]] || ! grep -q "${gov}(current account)" <<<"$out"; then
-        echo "ERROR: apply_profile: console did not adopt $gov as its current account; listAccount said:" >&2
-        sed 's/^/         /' <<<"$out" >&2
-        return 1
-    fi
-
+    local pem gov target out
+    pem="$(_ops_admin_pem)" || return 1
+    gov="$(basename "$pem" .pem)"
     # The governor first (it signs everything the replay itself sends), then every extra account the
     # caller says its scenarios will spend from. RG_FUND_ADDRESSES is explicit on purpose: the Web3
     # leg signs with its own key, and an unfunded account there surfaces as
     # {"code":-32603,"message":"InsufficientFunds"} from eth_sendRawTransaction. Listing the
     # addresses beats probing the chain to guess whether balance accounting is on.
-    local target
     for target in "$gov" ${RG_FUND_ADDRESSES:-}; do
         target="${target//,/}"
         [[ -n "$target" ]] || continue
-        echo "  addBalance $target $amount"
-        rc=0
-        out="$(bash console.sh addBalance "$target" "$amount" 2>&1)" || rc=$?
-        if [[ "$rc" != 0 ]] || ! grep -qE '"code"[[:space:]]*:[[:space:]]*0|[Ss]uccess' <<<"$out"; then
-            echo "ERROR: apply_profile: addBalance $target $amount did not report success — transactions from that account will fail for lack of gas money." >&2
+        echo "  balance add $target $amount"
+        out="$(_ops_write balance add "$target" "$amount" 2>&1)" || true
+        if ! _ops_ok "$out"; then
+            echo "ERROR: apply_profile: balance add $target $amount did not report ok — transactions from that account will fail for lack of gas money. The binary said:" >&2
             sed 's/^/         /' <<<"$out" >&2
             return 1
         fi
     done
 }
 
-# _console_prepare — resolve the console install, point it at THIS cluster, and make it the working
-# directory for every console call below.
-#
-# Two failures this closes, both found only by running against a real chain:
-#
-#   1. Every console invocation here is `bash console.sh ...`, and the two files
-#      _fund_console_account writes (conf/config.toml, account/ecdsa/) are relative — the script has
-#      always assumed the console's own directory IS the working directory. Nothing ever put it
-#      there. The host launches the engine from the repo root, so step 4 died with
-#      "bash: console.sh: No such file or directory" after a full chain had already been built.
-#      CONSOLE_DIR existed in the key registry and doctor checked it; no code read it.
-#   2. The console is a shared install whose config.toml names whatever chain it was last pointed
-#      at. On the first machine this ran on that was a different, five-day-old cluster on the
-#      default ports — so the profile replay would have landed on THAT chain while the gate went on
-#      to test this one, and every flag would have reported success.
-#
-# This mutates the shared console's config.toml, which is what the existing accountAddress pinning
-# below already does. TLS is out of scope: this console runs disableSsl=true, and a profile that
-# needs SM/SSL certs would have to sync them from the cluster's own sdk/ directory first.
-_console_prepare() {
-    # Same fallback the three scenario families use. They must resolve to the SAME console: the
-    # replay pins an account and repoints the peer list in its config.toml, and a scenario reading a
-    # different install would sign as a different account against a different chain.
-    local dir="${CONSOLE_DIR:-console/dist}"
-    [[ -f "$dir/console.sh" ]] || {
-        echo "ERROR: apply_profile: $dir/console.sh not found — CONSOLE_DIR must be a built console distribution." >&2
-        return 1
-    }
-    cd "$dir" || return 1
-
-    local base="${BCOS_RPC_BASE_PORT:-20200}" list="" i
-    for ((i = 0; i < node_count; i++)); do
-        list+="${list:+, }\"127.0.0.1:$((base + i))\""
-    done
-    PEERS="$list" perl -0pi -e 's{^\s*peers\s*=.*$}{peers=[$ENV{PEERS}]}m' conf/config.toml
-    echo "  console $dir -> peers=[$list]"
-}
-
-echo ">> [4/4] replaying setSystemConfigByKey via console (needs live chain)"
-_console_prepare || exit 1
-# The console exits 0 even when it never reached the chain (it prints "Failed to create BcosSDK"
-# and returns success), so `set -e` alone does NOT catch a failed replay. Without an explicit
-# check, a run where all 14 production flags silently failed to apply still reports "cluster
-# ready" — the gate then tests a DEFAULT-config chain while claiming production fidelity, which
-# is the one false-green this whole script exists to prevent. Demand the success envelope.
+echo ">> [4/4] replaying [system_config_replay] with fisco-bcos sysconfig set (needs live chain)"
+# Each pair is written, then READ BACK and compared. `ok` alone is not the verdict: on a governance
+# chain the write becomes a committee proposal, and the preset reports ok while the proposal is
+# still voting (bcos-ops PresetCall.cpp) -- the value on chain is the only thing that proves the
+# profile applied. Without this a run where the production flags silently failed to apply still
+# reports "cluster ready", and the gate then tests a DEFAULT-config chain while claiming
+# production fidelity, which is the one false-green this whole script exists to prevent.
 while read -r pair; do
     [[ -z "$pair" ]] && continue
     key="${pair%% *}"
     value="${pair#* }"
-    echo "  setSystemConfigByKey $key $value"
-    # The console parses setSystemConfigByKey values as Java integers and dies client-side on a
-    # 0x-prefixed string (`For input string: "x5208"`) — the call never reaches the chain. The
-    # chain's own validator demands the opposite: SystemConfigPrecompiled.cpp:162-168 rejects a
-    # value that is not a hex string, with the message "must be a hex number like 0xa". Send the
-    # decimal equivalent so the replay can proceed. FIDELITY CAVEAT: the chain stores the string it
-    # is given, so the local chain ends up holding "21000" where the captured production chain
-    # holds "0x5208" — eth_gasPrice reports the same number either way, but the stored
-    # representation is NOT identical to production. Say so rather than hide it.
-    console_value="$value"
-    if [[ "$value" =~ ^0[xX][0-9a-fA-F]+$ ]]; then
-        console_value=$((value))
-        echo "  NOTE: $key sent as decimal $console_value (console cannot parse $value); stored representation will differ from the captured profile"
+    echo "  sysconfig set $key $value"
+    set_out="$(_ops_write sysconfig set "$key" "$value" 2>&1)" || true
+    if ! _ops_ok "$set_out"; then
+        echo "ERROR: apply_profile: sysconfig set $key $value did not report ok — the profile is NOT applied, refusing to report this cluster as production-faithful. The binary said:" >&2
+        sed 's/^/         /' <<<"$set_out" >&2
+        exit 1
     fi
-    replay_rc=0
-    replay_out="$(bash console.sh setSystemConfigByKey "$key" "$console_value" 2>&1)" || replay_rc=$?
-    if [[ "$replay_rc" != 0 ]] || ! grep -qE '"code"[[:space:]]*:[[:space:]]*0' <<<"$replay_out"; then
-        echo "ERROR: apply_profile: setSystemConfigByKey $key $value did not report success — the profile is NOT applied, refusing to report this cluster as production-faithful." >&2
-        echo "       console said:" >&2
-        sed 's/^/         /' <<<"$replay_out" >&2
+    get_out="$(_ops_read sysconfig get "$key" 2>&1)" || true
+    readback="$(_ops_json_top "$get_out" value)"
+    if [[ "$readback" != "$value" ]]; then
+        echo "ERROR: apply_profile: $key reads back as '$readback' after setting '$value' — the profile is NOT applied as written (a proposal still voting, or the chain stores the value differently). The binary said:" >&2
+        sed 's/^/         /' <<<"$get_out" >&2
         exit 1
     fi
     # Fund immediately after the balance precompiled goes live: from here on the chain charges gas
     # to a real balance, and the profile's key order puts tx_gas_price later (see the ordering note
     # in the profile's [system_config_replay] section).
     if [[ "$key" == "feature_balance_precompiled" && "$value" != "0" ]]; then
-        _fund_console_account || exit 1
+        _fund_accounts || exit 1
     fi
 done < <(profile_replay_pairs)
 

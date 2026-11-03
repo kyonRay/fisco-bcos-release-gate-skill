@@ -10,12 +10,26 @@ cd "$(dirname "$0")/.."
 source tests/assert.sh
 source scripts/scenarios/scenario_upgrade.sh
 
-rule='{"code":-50100,"msg":"Set compatibility version should not lower than version nowadays."}'
+rule='{
+  "mode": "direct",
+  "ok": false,
+  "status": 16,
+  "message": "Set compatibility version should not lower than version nowadays."
+}'
 rc=0; _upg_downgrade_refused "$rule" 3.18.0 3.18.0 || rc=$?
 assert_eq 0 "$rc" "direct path: rule message + version unchanged -> refused (0)"
 
-rc=0; _upg_downgrade_refused "Proposal Status : failed" 3.18.0 3.18.0 || rc=$?
-assert_eq 0 "$rc" "committee path: failed proposal + version unchanged -> refused (0)"
+prop='{
+  "mode": "proposal",
+  "ok": false,
+  "proposal": {
+    "id": 3,
+    "statusName": "executed",
+    "execCode": 16
+  }
+}'
+rc=0; _upg_downgrade_refused "$prop" 3.18.0 3.18.0 || rc=$?
+assert_eq 0 "$rc" "committee path: proposal executed with a non-zero execCode + version unchanged -> refused (0)"
 
 rc=0; _upg_downgrade_refused "$rule" 3.16.4 3.18.0 || rc=$?
 assert_eq 1 "$rc" "version moved down -> NOT refused (1), whatever the console said"
@@ -26,8 +40,17 @@ assert_eq 1 "$rc" "console claims success but the value did not move -> not a re
 rc=0; _upg_downgrade_refused '{"code":-50000,"msg":"Permission denied"}' 3.18.0 3.18.0 || rc=$?
 assert_eq 1 "$rc" "refused for permissions, not for the version rule -> (1)"
 
-rc=0; _upg_downgrade_refused "Proposal Status : pending" 3.18.0 3.18.0 || rc=$?
-assert_eq 1 "$rc" "proposal still pending -> the rule was never exercised (1)"
+pending='{
+  "mode": "proposal",
+  "ok": true,
+  "proposal": {
+    "id": 4,
+    "statusName": "voting",
+    "execCode": 0
+  }
+}'
+rc=0; _upg_downgrade_refused "$pending" 3.18.0 3.18.0 || rc=$?
+assert_eq 1 "$rc" "proposal still voting -> the rule was never exercised (1)"
 
 rc=0; _upg_downgrade_refused "" "" 3.18.0 || rc=$?
 assert_eq 1 "$rc" "empty readback and empty output is never a refusal (1)"

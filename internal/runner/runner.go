@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
 )
 
 // DefaultKillGrace is how long a TERMed process group has before it is KILLed.

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // minGenesis is prepended to every fixture: Parse requires [genesis] compatibility_version, so a

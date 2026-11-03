@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 func fixedNow() time.Time { return time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC) }

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
 )
 
 // probe is a command that exists only in this test file. Registering a placeholder in the real

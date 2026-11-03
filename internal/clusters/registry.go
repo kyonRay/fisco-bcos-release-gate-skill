@@ -28,8 +28,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/workspace"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/workspace"
 )
 
 // Entry is one registered cluster. It is the persistent reservation.

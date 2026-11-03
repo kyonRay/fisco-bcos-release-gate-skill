@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 func TestRunIDsAreUniqueWithinOneSecond(t *testing.T) {

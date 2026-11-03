@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
 )
 
 // The leader exiting on TERM is not the end of the story: a group member that IGNORES TERM keeps

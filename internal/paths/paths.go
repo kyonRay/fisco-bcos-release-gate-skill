@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // Env is the subset of the environment that decides where things live.

@@ -10,8 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
 )
 
 // LoadFile reads fbt.yaml and flattens it to validated, dotted, string-valued keys.

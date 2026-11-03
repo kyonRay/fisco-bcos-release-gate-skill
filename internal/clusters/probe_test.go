@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // listenOn takes a port and holds it, the way a chain already running on this machine does.

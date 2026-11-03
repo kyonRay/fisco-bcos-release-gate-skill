@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // PortRange is a half-open-free, inclusive span of TCP ports one cluster holds.

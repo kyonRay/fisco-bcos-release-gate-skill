@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/engine"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/events"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/runner"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/engine"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/events"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/runner"
 )
 
 // Command is one engine command to launch.

@@ -3,15 +3,15 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/testinstall"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/testinstall"
 )
 
 // stubEngine installs scripts that speak the real fd 3 protocol but build nothing. These tests

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
 )
 
 // script writes a real bash script and returns its path. Tests drive real processes, real signals

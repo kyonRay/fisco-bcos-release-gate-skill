@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // Cell is one square of the evidence matrix: what ran, in which phase, and how it came out.

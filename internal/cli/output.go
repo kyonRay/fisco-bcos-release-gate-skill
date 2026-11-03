@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // OutputMode is the shape of everything fbt writes to stdout (spec §8).

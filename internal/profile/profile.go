@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // KV is one `key = value` line, kept as a slice element rather than a map entry because the order

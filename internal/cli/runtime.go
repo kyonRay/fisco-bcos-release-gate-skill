@@ -8,16 +8,16 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/cases"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/clusters"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/config"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/engine"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/events"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/execution"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/paths"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/profile"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/workspace"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/cases"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/clusters"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/config"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/engine"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/events"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/execution"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/paths"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/profile"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/workspace"
 )
 
 // runtime is everything a chain-touching command needs, assembled once.

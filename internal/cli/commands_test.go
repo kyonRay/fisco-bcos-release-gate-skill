@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/testinstall"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/testinstall"
 )
 
 // fixture returns the flags that point fbt at a throwaway install. The real command table is used

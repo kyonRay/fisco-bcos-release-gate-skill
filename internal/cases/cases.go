@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 type Status string

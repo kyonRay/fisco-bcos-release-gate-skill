@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // Workspace is one run's directory layout. Every field is absolute.

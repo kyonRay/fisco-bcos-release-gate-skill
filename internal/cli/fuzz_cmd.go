@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/doctor"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/execution"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/doctor"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/execution"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
 )
 
 func init() { commands["fuzz"] = fuzzCommand }

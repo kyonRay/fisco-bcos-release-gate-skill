@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 func yamlAt(t *testing.T, dir, body string) string {

@@ -7,10 +7,10 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/report"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/workspace"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/report"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/workspace"
 )
 
 func init() { commands["report"] = reportCommand }

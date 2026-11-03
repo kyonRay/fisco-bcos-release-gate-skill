@@ -3,7 +3,7 @@
 // already treats "not 0 and not 10" as "the test machine is broken".
 package exitcode
 
-import "github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+import "github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 
 type Code int
 

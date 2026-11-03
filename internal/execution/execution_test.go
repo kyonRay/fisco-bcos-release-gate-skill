@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/engine"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/events"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/testinstall"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/engine"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/events"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/testinstall"
 )
 
 // harness builds a real install tree with a real Executor over it. The scripts are stand-ins that

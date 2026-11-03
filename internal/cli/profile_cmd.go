@@ -11,10 +11,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/paths"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/profile"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/paths"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/profile"
 )
 
 func profileCommand(ctx context.Context, o GlobalOptions, args []string, stdout, stderr io.Writer) exitcode.Code {

@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/cases"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/clusters"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/doctor"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/events"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/execution"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/cases"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/clusters"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/doctor"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/events"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/execution"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 func init() { commands["gate"] = gateCommand }

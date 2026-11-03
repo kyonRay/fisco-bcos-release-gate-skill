@@ -12,7 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/cli"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/cli"
 )
 
 func main() {

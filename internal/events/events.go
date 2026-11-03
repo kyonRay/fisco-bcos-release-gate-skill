@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/engine"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/engine"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 // Event is one normalized event: the envelope the host owns, plus the engine's flat fields.

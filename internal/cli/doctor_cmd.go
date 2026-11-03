@@ -7,9 +7,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/doctor"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/exitcode"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/doctor"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/exitcode"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 func init() { commands["doctor"] = doctorCommand }

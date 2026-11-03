@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/events"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/runner"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/events"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/runner"
 )
 
 // This is the only test that drives the REAL bash engine through the REAL Go host. Everything

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/profile"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/profile"
 )
 
 func mustMerge(t *testing.T, in Inputs) Resolved {

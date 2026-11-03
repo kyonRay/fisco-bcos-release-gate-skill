@@ -4,9 +4,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/keys"
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/profile"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/keys"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/profile"
 )
 
 // Source says which layer a value came from. `config show` prints it, and it is the only way a

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/kyonRay/fisco-bcos-testing-skill/internal/fbterr"
+	"github.com/kyonRay/fisco-bcos-release-gate-skill/internal/fbterr"
 )
 
 type Kind int

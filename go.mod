@@ -1,4 +1,4 @@
-module github.com/kyonRay/fisco-bcos-testing-skill
+module github.com/kyonRay/fisco-bcos-release-gate-skill
 
 go 1.19
 

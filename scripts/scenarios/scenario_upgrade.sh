@@ -498,6 +498,13 @@ scenario_upgrade_run() {
     # its own log directory. apply_profile.sh/build_chain create the directory; anything that wants
     # to log into it does so after T0 returns.
     local node_dir_root="$outdir/127.0.0.1"
+    # Every helper that finds the chain -- _upg_discover_pids, ops_lib's _ops_node0, the oracles --
+    # reads NODE_DIR, and under the host that arrives as cluster.node_dir's default
+    # (./nodes-release-gate/127.0.0.1), not this run's workspace: the fourth real upgrade run built
+    # T0 fine and then "could not discover any live node PIDs" one line later. gate.sh sets
+    # NODE_DIR from its -o the same way; this entry point has to as well.
+    export NODE_DIR="$node_dir_root"
+    export RG_CLUSTER_DIR="$outdir"
     local rc=0
 
     echo "-- scenario_upgrade: T0 reproduce prod (old_bin=$old_bin, profile=$profile_path)"

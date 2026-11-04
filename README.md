@@ -194,6 +194,8 @@ node logs and configs when the run failed or recorded a defect. `gate run`, `gat
 those and any `cluster up` chain the same way. If fbt itself is killed with `-9`, the next run that
 builds a chain reaps what it left.
 
+The full guide, in Chinese, is [docs/usage.md](docs/usage.md): installation, configuration, every command, exit codes, troubleshooting and what has been verified on a real chain.
+
 What the host adds over invoking the scripts by hand:
 
 - **One exit code with a fixed meaning**: 0 clean, 10 gate failure, 20 configuration, 30

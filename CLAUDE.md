@@ -132,3 +132,5 @@ live chain required — the live-chain IO paths in each script are exercised onl
   registry entry so the next run can reap it after a `kill -9`. The engine still appends
   `failures.jsonl` inside the cluster directory; `Workspace.Archive` moves it out, so readers use
   `Workspace.DefectsPath()`.
+- **`docs/usage.md` is the user guide.** A change to a command, flag, config key, exit code or what a
+  run leaves behind must update it in the same change.

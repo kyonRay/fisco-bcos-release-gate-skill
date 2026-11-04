@@ -107,7 +107,7 @@ $XDG_STATE_HOME/fbt/clusters     # cluster 注册表(§10)
 | 命令 | 包裹入口 | 说明 |
 |---|---|---|
 | `fbt gate plan -p <profile> [--scenarios … --cases …]` | `gate.sh --dry-run` + 宿主 `.case` 枚举 | 打印四族 + `active` case 清单,校验名字,不碰链;`.case` 状态在此阶段全部解析校验。 |
-| `fbt gate upgrade -p <profile> --old-bin --new-bin --target-ver` | `scenario_upgrade_run`(子项目 0 修复 4 参数化) | 从 old_bin 建 T0 起点滚动升级。 |
+| `fbt gate upgrade -p <profile> --old-bin --new-bin --target-ver [--keep-cluster]` | `scenario_upgrade_run`(子项目 0 修复 4 参数化) | 从 old_bin 建 T0 起点滚动升级。 |
 | `fbt cluster up -p <profile>` / `fbt cluster down [--run-id\|--workspace]` | `apply_profile.sh` / `stop_all` | 生命周期;`down` 目标定位见 §10。 |
 | `fbt fuzz run --transport … [--seed --batch --iters --strategy --restart-cmd]` | `fuzz_bcos.sh` | 探索层;不并入全量;`gate run --with-fuzz` 预留,用即 `20`。 |
 | `fbt case run <case>` / `fbt case list [--status active\|pending\|example\|all]` | `run_case.sh` | 单条回放返回**真实结果**(status 只影响 aggregate);list 默认列 active。 |
@@ -319,6 +319,7 @@ PROFILE_REPLAY["$key"]="$value"
 - **进程组终止**:独立进程组启动 bash 子树;超时或 SIGINT/SIGTERM 对**整个进程组**先 `TERM`、宽限期后 `KILL`,不留 Java/curl/节点孤儿。
 - **端口级并发锁(持久占用,非仅 advisory)**:workspace 唯一目录只隔离文件,**隔离不了固定端口 30300/20200/8545**。故默认**全局单实例锁**;`--allow-parallel` 才放行,且**先验证各实例节点端口区间确实不相交**。锁是**持久 reservation**——`cluster up` 返回后锁**继续存在**代表活动端口占用(不随建链命令退出而释放),直到 `cluster down` 或 stale 回收。
 - **cluster 注册表 + `down` 目标 + stale 回收**:活动 cluster 注册到**固定 state 目录** `$XDG_STATE_HOME/fbt/clusters`(非难发现的临时 workspace),记 `run_id`/端口区间/节点 PID。`cluster down` 需 `--run-id`/`--workspace` 指定目标;省略且发现多个活动 cluster → `20`(不猜)。**stale 检测**:注册表项/锁若其记录的节点 PID 已不存在,视为陈旧,`fbt` 启动时自动回收(清锁 + 删注册项),避免崩溃残留永久占用端口。
+- **退出后清理(2026-11-04 增补)**:除 `cluster up` 成功外,每轮退出(通过、门禁失败、Ctrl-C)都由宿主 `settle` 停节点、删 `cluster/`、释放端口。保留 `events.jsonl`;有缺陷时 `failures.jsonl` 从 `cluster/` 移到 run 根目录,`evidence` 字段改指 `evidence/`;失败轮或有缺陷时节点日志与配置移入 `evidence/`,二进制、`data`、密钥不留。`gate run`/`gate upgrade`/`case run` 的 `--keep-cluster` 保留链和目录,`cluster down` 按同样规则收尾。注册表项记录 `owner`(fbt 进程);owner 已死的项由下一轮在端口预检前回收,`cluster up` 与 `--keep-cluster` 的项没有 owner,不会被回收。`cluster down --workspace` 只删 `runs/<id>/cluster` 形态的目录,其他路径只停节点。
 - **失败后续跑(修正)**:默认续跑**仅适用于门禁失败 `10`**(尽量给全景);遇 `20/30/40` **停止后续 case**(结果已不可信)。`--fail-fast` 则首个 `10` 也即止。
 - **退出码优先级**:`40 > 30 > 20 > 10 > 0`(运行期配置错误可能与已有门禁失败并存,`20` 压过 `10`);**`130`(用户取消)压过所有聚合结果**。
 

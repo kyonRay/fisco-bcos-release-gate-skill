@@ -178,6 +178,11 @@ source `scripts/scenarios/scenario_upgrade.sh` directly and call `scenario_upgra
 with the cluster outdir, the old (current production) binary, the new (release-candidate) binary,
 and the target `compatibility_version` string.
 
+**Host runs leave no chain behind.** Under `fbt`, every run stops its nodes, releases its ports and
+removes its cluster directory on exit, keeping only `events.jsonl`, `failures.jsonl` and, for a
+failed run, node logs under `evidence/`. To inspect a live chain after a run, pass `--keep-cluster`
+to `gate run`, `gate upgrade` or `case run`, and end it with `fbt cluster down --run-id <id>`.
+
 Use `gate.sh -p <profile> --dry-run` first — it validates every requested scenario name against
 `GATE_KNOWN_SCENARIOS` and prints the resolved plan with no chain touched.
 

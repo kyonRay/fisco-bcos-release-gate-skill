@@ -126,3 +126,9 @@ live chain required — the live-chain IO paths in each script are exercised onl
   engine needs (`sysconfig set/get`, `balance add`, `tx smoke`, bcos-ops / ADR 0009) goes through
   `scripts/ops_lib.sh`; do not reintroduce the Java console, a cpp-sdk client, or a second JSON
   parser. The binary under test is therefore 3.18.0 or newer, and `doctor` checks that up front.
+- **The host owns what a run leaves behind.** Stopping leftover nodes, removing the cluster directory
+  and releasing the ports all happen in `settle` (`internal/cli/leftover.go`), not in engine traps. A
+  command that builds a chain must exit through it, and must record `Owner: clusters.Self()` on its
+  registry entry so the next run can reap it after a `kill -9`. The engine still appends
+  `failures.jsonl` inside the cluster directory; `Workspace.Archive` moves it out, so readers use
+  `Workspace.DefectsPath()`.

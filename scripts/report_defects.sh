@@ -9,7 +9,9 @@
 #
 # Usage:
 #   report_defects.sh <outdir> [--dry-run] [-h]
-#     <outdir>    directory containing failures.jsonl (as written by failures_append)
+#     <outdir>    directory containing failures.jsonl (as written by failures_append). For a run
+#                 fbt has finished that is the run directory, runs/<id>/: the host moves the file
+#                 there when it removes the cluster directory.
 #     --dry-run   print how many unreported records would be added and the add_records JSON
 #                 that would be sent, WITHOUT calling mcporter. This is the ONLY path this
 #                 skill's own tests exercise — there is no live tencent-docs auth in CI. Guarded

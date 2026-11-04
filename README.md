@@ -186,6 +186,14 @@ the event protocol is a no-op there -- so this is an additional front end, not a
 ~/fbt/bin/fbt report --list          # every run that left a transcript, newest first
 ```
 
+Every run cleans up after itself when it exits, whether it passed, failed or was interrupted: its
+nodes stop, its ports are released and its cluster directory is removed. What stays under
+`runs/<id>/` is `events.jsonl`, `failures.jsonl` when a defect was recorded, and `evidence/` holding
+node logs and configs when the run failed or recorded a defect. `gate run`, `gate upgrade` and
+`case run` take `--keep-cluster` to leave the chain and its directory in place; `cluster down` ends
+those and any `cluster up` chain the same way. If fbt itself is killed with `-9`, the next run that
+builds a chain reaps what it left.
+
 What the host adds over invoking the scripts by hand:
 
 - **One exit code with a fixed meaning**: 0 clean, 10 gate failure, 20 configuration, 30

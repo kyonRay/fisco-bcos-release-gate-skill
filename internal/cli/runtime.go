@@ -27,12 +27,14 @@ import (
 // any workspace exists, and stale clusters are reclaimed before a reservation is attempted. Each
 // step would otherwise leave something behind when the next one fails.
 type runtime struct {
-	Paths    paths.Paths
-	Config   config.Resolved
-	Values   map[string]string // every resolved key, including host-only ones
-	Manifest engine.Manifest
-	Registry *clusters.Registry
-	Cases    cases.Registry
+	settled   bool // settle has run
+	nodesLeft bool // settle found nodes it could not stop, or was told to keep
+	Paths     paths.Paths
+	Config    config.Resolved
+	Values    map[string]string // every resolved key, including host-only ones
+	Manifest  engine.Manifest
+	Registry  *clusters.Registry
+	Cases     cases.Registry
 	// ProfilePath is the profile resolved to an absolute path. The engine scripts take a PATH, not
 	// a logical name: passing "production-enterprise" through makes gate.sh look for a file by that
 	// literal name and fail with "profile not found" -- a name the host could have resolved in
@@ -210,6 +212,24 @@ func (rt *runtime) timeout() time.Duration {
 		return 0
 	}
 	return time.Duration(n) * time.Second
+}
+
+// keepCluster is --keep-cluster, or the same request made through run.keep_cluster in a config file
+// or RG_KEEP_CLUSTER.
+func (rt *runtime) keepCluster(flag bool) bool {
+	return flag || rt.engineConfig()["run.keep_cluster"] == "1"
+}
+
+// stageConfig is the engine config for one stage of a run. Only the last stage of a kept run may
+// leave its chain up: gate run's later stages build their own chain on the same ports.
+func (rt *runtime) stageConfig(keep bool) map[string]string {
+	cfg := rt.engineConfig()
+	if keep {
+		cfg["run.keep_cluster"] = "1"
+	} else {
+		cfg["run.keep_cluster"] = "0"
+	}
+	return cfg
 }
 
 // engineConfig is what the engine's environment carries: genesis keys are not registry keys, and

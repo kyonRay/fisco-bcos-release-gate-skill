@@ -88,14 +88,13 @@ func TestCreateMakesTheWholeLayout(t *testing.T) {
 	}
 	// failures.jsonl is NOT pre-created: failures_lib.sh appends to it, and an existing empty file
 	// would make "no defects were recorded" and "the sink was never written" look the same.
-	if _, err := os.Stat(w.Failures); !os.IsNotExist(err) {
+	if _, err := os.Stat(w.ClusterFailures); !os.IsNotExist(err) {
 		t.Errorf("failures.jsonl exists before anything failed: %v", err)
 	}
-	// It must name the path the ENGINE writes: gate.sh sets FAILURES_OUTDIR to the cluster outdir,
-	// so a tidier path beside the cluster would send an operator to a file nothing ever creates.
-	if w.Failures != filepath.Join(w.Cluster, "failures.jsonl") {
-		t.Errorf("Failures = %s, want it inside the cluster directory the engine writes to",
-			w.Failures)
+	// The engine appends inside the cluster directory it was given; Archive moves the rows out.
+	if w.ClusterFailures != filepath.Join(w.Cluster, "failures.jsonl") {
+		t.Errorf("ClusterFailures = %s, want it inside the cluster directory the engine writes to",
+			w.ClusterFailures)
 	}
 }
 

@@ -283,6 +283,11 @@ rpc_current_height() {
 # left no record anywhere but the terminal, which is the one place nobody reads afterwards. The
 # flywheel's whole claim is that a confirmed defect becomes a durable artifact; a fixture that
 # fires and records nothing breaks that at the last step.
+# RG_KEEP_CLUSTER=1 is `fbt case run --keep-cluster`: the chain stays up for inspection.
+_case_stop_cluster() {
+    [[ "${RG_KEEP_CLUSTER:-0}" == 1 ]] || bash "$NODE_DIR/stop_all.sh" || true
+}
+
 _case_record() {
     # The version field is "unknown" rather than the profile's compatibility_version: run_case.sh
     # deliberately does not source profile_lib.sh (see the note above RPC_URL), and sourcing it for
@@ -322,7 +327,7 @@ else
         # folding it into stateroot_tripped and reporting a misleading CASE: FAIL.
         event_set_outcome infra_error
         echo "ERROR: run_case: stateroot: <2 node RPCs discovered under $NODE_DIR — infrastructure failure, refusing to judge $CASE_PATH" >&2
-        bash "$NODE_DIR/stop_all.sh" || true
+        _case_stop_cluster
         exit 1
     elif [[ "$sr_rc" == 1 ]]; then
         stateroot_tripped=1
@@ -330,7 +335,7 @@ else
     fi
 fi
 
-bash "$NODE_DIR/stop_all.sh" || true
+_case_stop_cluster
 
 # Name the outcome at BOTH verdict points. Without this the rc fallback maps a failing case to
 # engine_error -> exit 40, "fbt has a bug", for a replay that did exactly its job: a fixture that

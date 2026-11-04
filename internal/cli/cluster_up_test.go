@@ -43,19 +43,33 @@ func TestClusterUpLeavesTheClusterAndItsReservationInPlace(t *testing.T) {
 	}
 }
 
-// A cluster that failed halfway may still have nodes listening. Releasing its ports would hand
-// them to the next run, which would then collide with something fbt believes is gone.
-func TestAFailedBringUpKeepsItsReservation(t *testing.T) {
+// A chain that failed to come up is not one anybody asked to keep: its nodes stop and its ports go
+// back. The reservation only outlives the command for a chain that is really up.
+func TestAFailedBringUpCleansUpAfterItself(t *testing.T) {
+	needPerl(t)
 	ti, flags := gateFixture(t, cleanGate, cleanCase)
-	stubApplyProfile(t, ti, "event_set_outcome infra_error\nexit 1\n")
+	stubApplyProfile(t, ti, `ws=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && ws="$2"; shift; done
+set -- -p p -o "$ws"
+`+liveNode+"event_set_outcome infra_error\nexit 1\n")
 
 	code, out, _ := runReal(t, append([]string{"--output", "json"},
 		append(flags, "cluster", "up", "-p", "default-latest")...)...)
+	var doc UpDoc
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	stopLeftover(t, doc.Workspace)
 	if code != exitcode.Infra {
 		t.Fatalf("code = %v, want 30\n%s", code, out)
 	}
-	if !kept(t, ti) {
-		t.Error("a half-built cluster released its ports")
+	if kept(t, ti) {
+		t.Error("a failed bring-up still holds its ports")
+	}
+	if nodesUnder(doc.Workspace) != 0 {
+		t.Error("a failed bring-up left a node running")
+	}
+	if _, err := os.Stat(doc.Workspace); !os.IsNotExist(err) {
+		t.Errorf("a failed bring-up left its directory: %v", err)
 	}
 }
 

@@ -30,7 +30,12 @@ func stubEngine(t *testing.T, ti testinstall.Install, gateBody, caseBody string)
 	}
 	ti.WriteScript(t, "gate.sh", lib+"event_begin_command gate.sh\n"+gateBody)
 	ti.WriteScript(t, "run_case.sh", lib+"event_begin_command run_case.sh\n"+caseBody)
-	ti.WriteScript(t, "cluster_down.sh", lib+"event_begin_command cluster_down.sh\necho stopped\n")
+	// The real teardown too: a test of what is left behind has to run what actually stops nodes.
+	down, err := os.ReadFile("../../scripts/cluster_down.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ti.WriteScript(t, "cluster_down.sh", string(down))
 }
 
 // gateFixture points fbt at a throwaway install whose config satisfies the whole doctor matrix,

@@ -70,7 +70,7 @@ func reportCommand(_ context.Context, o GlobalOptions, args []string, stdout, st
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	rep, err := report.Load(runID, ws.Root, ws.Events, ws.Failures)
+	rep, err := report.Load(runID, ws.Root, ws.Events, ws.DefectsPath())
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
@@ -133,6 +133,6 @@ func writeReportHuman(w io.Writer, r report.Report) {
 		// Named explicitly because the sync is a separate, outward-facing action: it publishes to a
 		// shared ledger, and nothing here does it on the operator's behalf.
 		fmt.Fprintf(w, "\n  push them to the defect ledger with:\n"+
-			"    scripts/report_defects.sh %s --dry-run   # preview first\n", r.Workspace+"/cluster")
+			"    scripts/report_defects.sh %s --dry-run   # preview first\n", r.DefectsDir)
 	}
 }

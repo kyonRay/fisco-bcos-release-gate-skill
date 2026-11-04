@@ -357,8 +357,12 @@ for name in "${scenario_list[@]}"; do
     run_oracles_once "after:$name" || oracle_tripped=1
 done
 
-echo ">> [4/4] tearing down cluster (needs live chain)"
-bash "$NODE_DIR/stop_all.sh" || true
+if [[ "${RG_KEEP_CLUSTER:-0}" == 1 ]]; then
+    echo ">> [4/4] keeping the cluster running (--keep-cluster)"
+else
+    echo ">> [4/4] tearing down cluster (needs live chain)"
+    bash "$NODE_DIR/stop_all.sh" || true
+fi
 
 if [[ "$oracle_tripped" == 1 || "$scenario_failed" == 1 ]]; then
     # THE verdict this whole script exists to produce: the chain failed the gate (10), which is an

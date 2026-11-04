@@ -1,6 +1,7 @@
 package clusters
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"syscall"
@@ -57,6 +58,12 @@ func (OSProber) Alive(n Node) bool {
 		return true
 	}
 	return now == n.Start
+}
+
+// Self identifies the running process, for recording it as an entry's owner.
+func Self() *Node {
+	pid := os.Getpid()
+	return &Node{Name: "fbt", PID: pid, Start: OSProber{}.Fingerprint(pid)}
 }
 
 // Fingerprint returns a string that changes when a PID is reused. An empty result means the

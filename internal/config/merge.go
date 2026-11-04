@@ -239,6 +239,9 @@ func Defaults() map[string]string {
 		// upgrade
 		"upgrade.rollback": "0",
 
+		// run
+		"run.keep_cluster": "0",
+
 		// host-only: cluster_up.sh's own getopts defaults (NODES=4, PORTS="30300,20200",
 		// SM_FLAG=""), which no ${NAME:-...} expression can express.
 		"cluster.node_count":    "4",

@@ -86,10 +86,10 @@ func clusterUp(ctx context.Context, o GlobalOptions, args []string, stdout, stde
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	if err := clusters.CheckFree(ports); err != nil {
+	if err := reapLeftovers(o, stderr); err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
-	if _, err := rt.Registry.Reclaim(); err != nil {
+	if err := clusters.CheckFree(ports); err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
 	if err := rt.begin(map[string]interface{}{"profile": profileSpec, "command": "cluster up"}); err != nil {
@@ -100,6 +100,7 @@ func clusterUp(ctx context.Context, o GlobalOptions, args []string, stdout, stde
 		Workspace: rt.Workspace.Cluster,
 		Profile:   profileSpec,
 		Ports:     ports,
+		Owner:     clusters.Self(),
 	}, parallel); err != nil {
 		return rt.fail(stdout, stderr, o.Output, err)
 	}
@@ -112,22 +113,17 @@ func clusterUp(ctx context.Context, o GlobalOptions, args []string, stdout, stde
 		Timeout:  rt.timeout(),
 	})
 	code := rt.Agg.Result()
-	rt.Exec.Finish(code)
-	rt.finish() // close the run transcript after the last event
+	if code != exitcode.OK {
+		// A chain that failed to come up is not one anybody asked to keep.
+		code, _ = rt.settle(false, stderr)
+	} else {
+		rt.Exec.Finish(code)
+		rt.finish() // close the run transcript after the last event
 
-	// Record which processes the cluster actually started. Registering with no nodes leaves the
-	// entry permanently "unknown": it can never be seen as active, never found stale, and never
-	// reclaimed after a crash -- the whole liveness apparatus sits behind an empty slice.
-	if code == exitcode.OK {
-		if nodes := clusters.DiscoverNodes(rt.Workspace.Cluster, clusters.OSProber{}); len(nodes) > 0 {
-			entry, err := rt.Registry.Resolve(rt.Norm.RunID, "")
-			if err == nil {
-				entry.Nodes = nodes
-				if err := rt.Registry.Update(entry); err != nil {
-					return rt.fail(stdout, stderr, o.Output, err)
-				}
-			}
-		}
+		// The chain outlives this process on purpose, so it stops having an owner to clean it up.
+		// Recording the processes matters too: an entry with no nodes stays "unknown" forever, and
+		// can never be seen as active, found stale or reclaimed after a crash.
+		rt.recordNodes(clusters.DiscoverNodes(rt.Workspace.Cluster, clusters.OSProber{}), nil)
 	}
 
 	doc := UpDoc{
@@ -135,13 +131,8 @@ func clusterUp(ctx context.Context, o GlobalOptions, args []string, stdout, stde
 		Profile: profileSpec, Ports: portStrings(ports), Reason: res.Reason,
 	}
 	if code != exitcode.OK {
-		// A half-built cluster keeps its reservation: something may still be listening, and
-		// handing those ports to the next run would collide with it. `cluster down` is the way out,
-		// and the message has to say so or the entry looks like a leak.
 		if err := render(stdout, o.Output, doc, func(w io.Writer) {
 			fmt.Fprintf(w, "cluster %s FAILED to come up (exit %d)\n  %s\n", doc.RunID, doc.Exit, doc.Reason)
-			fmt.Fprintf(w, "  its ports stay reserved; release them with:\n"+
-				"    fbt cluster down --run-id %s\n", doc.RunID)
 		}); err != nil {
 			return rt.fail(stdout, stderr, o.Output, err)
 		}
@@ -278,7 +269,8 @@ func clusterDown(ctx context.Context, o GlobalOptions, args []string, stdout, st
 	}
 
 	doc := downDoc{RunID: entry.RunID, Workspace: entry.Workspace, Outcome: "stopped"}
-	if entry.Status != clusters.StatusStale {
+	stale := entry.Status == clusters.StatusStale
+	if !stale {
 		res := rt.Exec.Run(ctx, execution.Command{
 			Script:   "cluster_down.sh",
 			Args:     []string{"-o", entry.Workspace},
@@ -291,12 +283,26 @@ func clusterDown(ctx context.Context, o GlobalOptions, args []string, stdout, st
 			// refused rather than colliding with whatever is still listening.
 			return emitError(stdout, stderr, o.Output, res.Err)
 		}
+		// The same check as above, for a stop_all.sh that reported success and left a node: the
+		// directory cannot be removed from under it, and its ports are still taken.
+		if !rt.stopCluster(entry.Workspace) {
+			return emitError(stdout, stderr, o.Output, fbterr.Infraf(
+				"nodes under %s are still running after stop_all.sh", entry.Workspace))
+		}
 	} else {
 		doc.Outcome = "already stopped"
 	}
-	if !keep && registered {
-		if err := rt.Registry.Release(entry.RunID); err != nil {
-			return emitError(stdout, stderr, o.Output, err)
+	if !keep {
+		if w, ok := rt.runOf(entry.Workspace); ok {
+			// A chain found dead ended in a way nobody has looked at, so its logs are kept.
+			if err := w.Archive(stale); err != nil {
+				return emitError(stdout, stderr, o.Output, err)
+			}
+		}
+		if registered {
+			if err := rt.Registry.Release(entry.RunID); err != nil {
+				return emitError(stdout, stderr, o.Output, err)
+			}
 		}
 	}
 	doc.Exit = 0

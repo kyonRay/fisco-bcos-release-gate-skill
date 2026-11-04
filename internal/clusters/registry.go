@@ -41,6 +41,11 @@ type Entry struct {
 	Nodes     []Node      `json:"nodes"`
 	CreatedAt string      `json:"created_at"`
 
+	// Owner is the fbt process that will clean this cluster up when it exits. An entry whose owner
+	// died (kill -9, a power cut) has nobody coming for it, so the next fbt run reaps it. A chain
+	// left running on purpose has no owner: `cluster up` and --keep-cluster clear this field.
+	Owner *Node `json:"owner,omitempty"`
+
 	// Status is computed from the node processes at read time, never stored: a status written to
 	// disk is a claim about the past, and the whole point of the check is what is true now.
 	Status Status `json:"status"`
@@ -167,6 +172,24 @@ func (r *Registry) Reclaim() ([]Entry, error) {
 		return nil
 	})
 	return removed, err
+}
+
+// Orphans lists the entries whose owning fbt process is gone. Their chains may still be running.
+func (r *Registry) Orphans() ([]Entry, error) {
+	var orphans []Entry
+	err := r.withLock(func() error {
+		entries, err := r.listLocked()
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if e.Owner != nil && !r.prober().Alive(*e.Owner) {
+				orphans = append(orphans, e)
+			}
+		}
+		return nil
+	})
+	return orphans, err
 }
 
 // Reserve records a new cluster, refusing anything that would collide with a live one.

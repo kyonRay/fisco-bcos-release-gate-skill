@@ -191,6 +191,9 @@ var table = []Row{
 	// ---- upgrade ----
 	{Key: "upgrade.rollback", Env: []string{"UPGRADE_ROLLBACK"}, Type: KindBool, Commands: []string{"upgrade"}},
 
+	// ---- run ----
+	{Key: "run.keep_cluster", Env: []string{"RG_KEEP_CLUSTER"}, Type: KindBool, Commands: []string{"gate", "case"}},
+
 	// ---- host-only run controls (spec §7.7): typed here so `run.timeout_sec: abc` is rejected
 	// with the same rigour as `fuzz.batch: abc`.
 	{Key: "run.allow_parallel", Domain: DomainHost, Type: KindBool},

@@ -1,4 +1,5 @@
-// Package workspace owns a run's identity and the one directory everything it produces lives under.
+// Package workspace owns a run's identity and the one directory everything it produces lives under,
+// including what remains of it once the run has been cleaned up (Archive).
 //
 // Spec §10 requires both together: a unique run_id AND an isolated workspace holding the cluster
 // directory, the evidence and failures.jsonl. The pairing is what makes two runs on one machine
@@ -27,11 +28,12 @@ type Workspace struct {
 	// report` reads: without it a finished run leaves nothing behind but whatever the terminal
 	// scrolled past.
 	Events string
-	// Failures is where failures_lib.sh actually appends, which is inside the CLUSTER directory,
-	// not beside it: gate.sh sets FAILURES_OUTDIR to the cluster outdir so a run's defect rows
-	// travel with the node directories they refer to. This field mirrors the engine rather than
-	// declaring a tidier path of its own -- a host that reported an evidence path nothing writes
-	// to would send an operator to an empty file after a real trip.
+	// ClusterFailures is where failures_lib.sh appends while the run is live: inside the cluster
+	// directory the engine was given as its output directory. Archive moves it to Failures when
+	// the cluster directory is removed.
+	ClusterFailures string
+	// Failures is the run's defect record after Archive. It sits beside events.jsonl, so it
+	// outlives the chain it describes.
 	Failures string
 }
 
@@ -118,11 +120,12 @@ func Layout(stateDir, runID string) (Workspace, error) {
 	}
 	root := filepath.Join(stateDir, "runs", runID)
 	return Workspace{
-		RunID:    runID,
-		Root:     root,
-		Cluster:  filepath.Join(root, "cluster"),
-		Evidence: filepath.Join(root, "evidence"),
-		Events:   filepath.Join(root, "events.jsonl"),
-		Failures: filepath.Join(root, "cluster", "failures.jsonl"),
+		RunID:           runID,
+		Root:            root,
+		Cluster:         filepath.Join(root, "cluster"),
+		Evidence:        filepath.Join(root, "evidence"),
+		Events:          filepath.Join(root, "events.jsonl"),
+		ClusterFailures: filepath.Join(root, "cluster", "failures.jsonl"),
+		Failures:        filepath.Join(root, "failures.jsonl"),
 	}, nil
 }

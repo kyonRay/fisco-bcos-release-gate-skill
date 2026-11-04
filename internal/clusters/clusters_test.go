@@ -212,6 +212,37 @@ func TestAllNodesGoneIsStaleAndIsReclaimed(t *testing.T) {
 	}
 }
 
+// An entry whose fbt died has nobody coming to clean it up, while its chain may well be running.
+// An entry with a live owner, or with none (a chain left up on purpose), is not an orphan.
+func TestOrphansAreEntriesWhoseOwnerIsGone(t *testing.T) {
+	p := fakeProber{alive: map[int]bool{100: true, 200: true}}
+	r := reg(t, p)
+	for _, e := range []Entry{
+		func() Entry {
+			e := entry("orphan", 30300, Node{Name: "node0", PID: 100})
+			e.Owner = &Node{PID: 999}
+			return e
+		}(),
+		func() Entry {
+			e := entry("running", 31300, Node{Name: "node0", PID: 100})
+			e.Owner = &Node{PID: 200}
+			return e
+		}(),
+		entry("kept", 32300, Node{Name: "node0", PID: 100}),
+	} {
+		if _, err := r.Reserve(e, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orphans, err := r.Orphans()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(orphans) != 1 || orphans[0].RunID != "orphan" {
+		t.Errorf("orphans = %+v", orphans)
+	}
+}
+
 // SOME nodes alive is neither healthy nor free. Reclaiming it would hand the survivors' ports to a
 // new run, and it is also exactly the state a consensus-halt investigation wants left intact.
 func TestAPartiallyDeadClusterIsDegradedAndNotReclaimed(t *testing.T) {

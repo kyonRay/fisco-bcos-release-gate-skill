@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -43,15 +44,18 @@ type Defect struct {
 
 // Report is the whole account of one run.
 type Report struct {
-	RunID     string   `json:"run_id"`
-	Workspace string   `json:"workspace"`
-	Command   string   `json:"command,omitempty"`
-	Profile   string   `json:"profile,omitempty"`
-	Started   string   `json:"started,omitempty"`
-	Finished  string   `json:"finished,omitempty"`
-	Exit      int      `json:"exit"`
-	Matrix    []Cell   `json:"matrix"`
-	Defects   []Defect `json:"defects"`
+	// DefectsDir holds failures.jsonl: the run directory once the run is cleaned up, the cluster
+	// directory while a kept chain is still there. It is what report_defects.sh takes.
+	DefectsDir string   `json:"defects_dir"`
+	RunID      string   `json:"run_id"`
+	Workspace  string   `json:"workspace"`
+	Command    string   `json:"command,omitempty"`
+	Profile    string   `json:"profile,omitempty"`
+	Started    string   `json:"started,omitempty"`
+	Finished   string   `json:"finished,omitempty"`
+	Exit       int      `json:"exit"`
+	Matrix     []Cell   `json:"matrix"`
+	Defects    []Defect `json:"defects"`
 	// Unreported counts the defects nobody has pushed anywhere. It is on the summary line because
 	// it is the number that decides whether there is still work to do after reading.
 	Unreported int `json:"unreported"`
@@ -90,7 +94,7 @@ func (e event) num(k string) int {
 
 // Load builds a report from one run's workspace.
 func Load(runID, workspaceRoot, eventsPath, failuresPath string) (Report, error) {
-	r := Report{RunID: runID, Workspace: workspaceRoot}
+	r := Report{RunID: runID, Workspace: workspaceRoot, DefectsDir: filepath.Dir(failuresPath)}
 	evs, err := readEvents(eventsPath)
 	if err != nil {
 		return r, err

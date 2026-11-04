@@ -110,7 +110,7 @@ func fuzzCommand(ctx context.Context, o GlobalOptions, args []string, stdout, st
 		Config:   cfg,
 		Timeout:  rt.timeout(),
 	})
-	return finishRun(rt, res, "fuzz", stdout, stderr, o)
+	return finishRun(rt, res, "fuzz", false, stdout, stderr, o)
 }
 
 // upgradeRun drives the T0-T8 version-upgrade timeline. Reached as `fbt gate upgrade`.
@@ -130,6 +130,9 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 	fs.StringVar(&newBin, "new-bin", "", "the release candidate rolled in during T2-T4")
 	fs.StringVar(&targetVer, "target-ver", "", "the compatibility_version the T5 bump moves to")
 	fs.BoolVar(&dryRun, "dry-run", false, "print the resolved plan, touch no chain")
+	var keepCluster bool
+	fs.BoolVar(&keepCluster, "keep-cluster", false,
+		"leave the upgraded chain and its directory in place; fbt cluster down ends them")
 	if err := fs.Parse(args); err != nil {
 		return emitError(stdout, stderr, o.Output, fbterr.Configf("%v", err))
 	}
@@ -149,6 +152,7 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 		return emitError(stdout, stderr, o.Output, err)
 	}
 
+	keepCluster = rt.keepCluster(keepCluster)
 	upArgs := []string{"-p", rt.ProfilePath, "--old-bin", oldBin, "--new-bin", newBin,
 		"--target-ver", targetVer}
 	if dryRun {
@@ -165,17 +169,16 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 			return emitError(stdout, stderr, o.Output, err)
 		}
 		// T0 builds a chain on the configured port band like any gate round, so it gets the same
-		// discipline: bind-probe, reclaim crash leftovers, reserve -- and keep the reservation if
-		// the timeline ends with nodes still up. Without this the third real upgrade run left four
-		// 3.17.0 nodes on the band with nothing in the registry to name them.
+		// discipline: reap leftovers, bind-probe, reserve. Without this the third real upgrade run
+		// left four 3.17.0 nodes on the band with nothing in the registry to name them.
 		ports, err := derivePorts(rt.Values)
 		if err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
-		if err := clusters.CheckFree(ports); err != nil {
+		if err := reapLeftovers(o, stderr); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
-		if _, err := rt.Registry.Reclaim(); err != nil {
+		if err := clusters.CheckFree(ports); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
 		if err := rt.begin(map[string]interface{}{"command": "upgrade", "target_ver": targetVer}); err != nil {
@@ -186,10 +189,11 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 			Workspace: rt.Workspace.Cluster,
 			Profile:   profileSpec,
 			Ports:     ports,
+			Owner:     clusters.Self(),
 		}, false); err != nil {
 			return rt.fail(stdout, stderr, o.Output, err)
 		}
-		defer func() { releaseUnlessAlive(rt, stderr) }()
+		defer rt.settle(keepCluster, stderr) // an early return still leaves nothing behind
 		upArgs = append(upArgs, "-o", rt.Workspace.Cluster)
 	}
 
@@ -200,7 +204,7 @@ func upgradeRun(ctx context.Context, o GlobalOptions, args []string, stdout, std
 		Config:   withOpsBin(rt.engineConfig(), newBin),
 		Timeout:  rt.timeout(),
 	})
-	return finishRun(rt, res, "upgrade", stdout, stderr, o)
+	return finishRun(rt, res, "upgrade", keepCluster, stdout, stderr, o)
 }
 
 // withOpsBin returns a copy of values with tools.ops_bin set to the release candidate. The T0
@@ -218,11 +222,10 @@ func withOpsBin(values map[string]string, newBin string) map[string]string {
 
 // finishRun closes the run and renders the result. It is shared so the two commands cannot drift
 // apart in how they report an outcome.
-func finishRun(rt *runtime, res execution.Result, name string, stdout, stderr io.Writer, o GlobalOptions) exitcode.Code {
+func finishRun(rt *runtime, res execution.Result, name string, keep bool, stdout, stderr io.Writer, o GlobalOptions) exitcode.Code {
 	code := rt.Agg.Result()
 	if rt.Norm.RunID != "" {
-		rt.Exec.Finish(code)
-		rt.finish() // close the run transcript after the last event
+		code, _ = rt.settle(keep, stderr)
 	}
 	doc := runDoc{
 		Exit: code.Int(), RunID: rt.Norm.RunID, Command: name,

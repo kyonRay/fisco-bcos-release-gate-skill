@@ -43,12 +43,13 @@ func gateCommand(ctx context.Context, o GlobalOptions, args []string, stdout, st
 // gateOptions are the flags shared by `gate run` and `plan`, so the plan is guaranteed to describe
 // the run it claims to.
 type gateOptions struct {
-	profile   string
-	scenarios string
-	cases     string
-	casesSet  bool // --cases was given, even as an empty string
-	failFast  bool
-	parallel  bool
+	profile     string
+	scenarios   string
+	cases       string
+	casesSet    bool // --cases was given, even as an empty string
+	failFast    bool
+	parallel    bool
+	keepCluster bool
 	// withFuzz is spec §6.3's reserved flag. It exists so the name is CLAIMED and using it is an
 	// explicit refusal rather than "flag provided but not defined", which reads like a typo.
 	withFuzz bool
@@ -77,6 +78,8 @@ func (g *gateOptions) bind(fs *flag.FlagSet) {
 		"allow a second cluster, if its port ranges do not overlap")
 	fs.StringVar(&g.cases, "cases", "",
 		"basename glob of the .case fixtures to replay (default: every active one)")
+	fs.BoolVar(&g.keepCluster, "keep-cluster", false,
+		"leave the chain and its directory in place; fbt cluster down ends them")
 	fs.BoolVar(&g.withFuzz, "with-fuzz", false,
 		"reserved: fold a fuzz pass into the round (not implemented, returns 20)")
 }
@@ -149,8 +152,8 @@ type GateDoc struct {
 	Cases     []stageEntry `json:"cases"`
 	Oracles   []oracleHit  `json:"oracles"`
 	Reason    string       `json:"reason,omitempty"`
-	// ClusterKept is set when the run ended with its nodes still running (a bring-up that failed
-	// after start_all.sh): the reservation was kept, and `fbt cluster down --run-id` stops it.
+	// ClusterKept is set when the run ended with its nodes still running (--keep-cluster, or a
+	// teardown that failed): the reservation stands, and `fbt cluster down --run-id` stops it.
 	ClusterKept bool `json:"cluster_kept,omitempty"`
 }
 
@@ -215,6 +218,11 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
+	// Before the port check: a leftover from a killed run is what would be holding those ports, and
+	// a run refused because a machine crashed last week would be a permanent block.
+	if err := reapLeftovers(o, stderr); err != nil {
+		return emitError(stdout, stderr, o.Output, err)
+	}
 	// The registry only knows the clusters fbt built, so ask the operating system about the rest.
 	// Skipping this cost ninety seconds and a 651MB binary copy before four nodes died on
 	// "Address already in use".
@@ -222,11 +230,7 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		return emitError(stdout, stderr, o.Output, err)
 	}
 
-	// 2. Reclaim crash leftovers, then reserve. In that order: a run refused because a machine
-	// crashed last week would be a permanent block with no way to see why.
-	if _, err := rt.Registry.Reclaim(); err != nil {
-		return emitError(stdout, stderr, o.Output, err)
-	}
+	// 2. Reserve.
 	if err := rt.begin(map[string]interface{}{"profile": g.profile}); err != nil {
 		return rt.fail(stdout, stderr, o.Output, err)
 	}
@@ -235,19 +239,13 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		Workspace: rt.Workspace.Cluster,
 		Profile:   g.profile,
 		Ports:     ports,
+		Owner:     clusters.Self(),
 	}, g.parallel); err != nil {
 		return rt.fail(stdout, stderr, o.Output, err)
 	}
-	// The reservation is released here rather than by gate.sh: the engine tears the cluster down,
-	// but only the host knows the run id the entry is filed under -- and only if the nodes are
-	// really gone (see releaseUnlessAlive).
 	doc := GateDoc{RunID: rt.Norm.RunID, Workspace: rt.Workspace.Root, Profile: g.profile}
-	released := false
-	defer func() {
-		if !released { // an early return: still never drop a reservation whose nodes are alive
-			releaseUnlessAlive(rt, stderr)
-		}
-	}()
+	g.keepCluster = rt.keepCluster(g.keepCluster)
+	defer rt.settle(g.keepCluster, stderr) // an early return still leaves nothing behind
 
 	// 3. Stage one: the scenario families. Skipped entirely when the round is cases-only
 	// (spec §6.2): gate.sh would build a chain to run nothing on.
@@ -261,13 +259,13 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 			Script:   "gate.sh",
 			Args:     gateArgs,
 			Requires: []string{"gate"},
-			Config:   rt.engineConfig(),
+			Config:   rt.stageConfig(g.keepCluster && len(sweep) == 0),
 			Timeout:  rt.timeout(),
 		})
 	}
 
 	// 4. Stage two: the .case sweep, subject to the continue policy.
-	for _, c := range sweep {
+	for i, c := range sweep {
 		if stop, why := stopSweep(rt.Agg.Result(), g.failFast); stop {
 			doc.Cases = append(doc.Cases, stageEntry{Name: c.Name, Result: "skip", Skip: why})
 			continue
@@ -276,17 +274,14 @@ func gateRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 			Script:   "run_case.sh",
 			Args:     []string{c.Path, "-o", rt.Workspace.Cluster},
 			Requires: []string{"case"},
-			Config:   rt.engineConfig(),
+			Config:   rt.stageConfig(g.keepCluster && i == len(sweep)-1),
 			Timeout:  rt.timeout(),
 		})
 	}
 
-	code := rt.Agg.Result()
-	rt.Exec.Finish(code)
-	rt.finish() // close the run transcript after the last event
-	// Decided before the document is rendered, so the JSON says whether a chain was left behind.
-	doc.ClusterKept = releaseUnlessAlive(rt, stderr)
-	released = true
+	// Before the document is rendered, so the JSON says whether a chain was left behind.
+	code, kept := rt.settle(g.keepCluster, stderr)
+	doc.ClusterKept = kept
 
 	// The report is derived from the normalized event stream, not assembled alongside it. A second
 	// source of truth here is how a summary comes to disagree with the events it summarizes.

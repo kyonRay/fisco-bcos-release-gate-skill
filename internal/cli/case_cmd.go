@@ -133,6 +133,9 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	finish := RegisterGlobalFlags(fs, &o)
 	var dryRun bool
 	fs.BoolVar(&dryRun, "dry-run", false, "print the resolved plan, touch no chain")
+	var keepCluster bool
+	fs.BoolVar(&keepCluster, "keep-cluster", false,
+		"leave the chain and its directory in place; fbt cluster down ends them")
 	if err := fs.Parse(args); err != nil {
 		return emitError(stdout, stderr, o.Output, fbterr.Configf("%v", err))
 	}
@@ -147,6 +150,7 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
 	}
+	keepCluster = rt.keepCluster(keepCluster)
 	c, err := rt.Cases.Find(fs.Arg(0))
 	if err != nil {
 		return emitError(stdout, stderr, o.Output, err)
@@ -171,10 +175,10 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		if err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
-		if err := clusters.CheckFree(ports); err != nil {
+		if err := reapLeftovers(o, stderr); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
-		if _, err := rt.Registry.Reclaim(); err != nil {
+		if err := clusters.CheckFree(ports); err != nil {
 			return emitError(stdout, stderr, o.Output, err)
 		}
 		// A dry run builds nothing, so giving it a workspace would leave an empty run directory
@@ -187,12 +191,11 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 			Workspace: rt.Workspace.Cluster,
 			Profile:   c.Profile,
 			Ports:     ports,
+			Owner:     clusters.Self(),
 		}, false); err != nil {
 			return rt.fail(stdout, stderr, o.Output, err)
 		}
-		// run_case.sh tears its own cluster down, but only the host knows the run id the entry is
-		// filed under -- same split as gate run, same "only if the nodes are really gone".
-		defer func() { releaseUnlessAlive(rt, stderr) }()
+		defer rt.settle(keepCluster, stderr) // an early return still leaves nothing behind
 		cmdArgs = append(cmdArgs, "-o", rt.Workspace.Cluster)
 	}
 
@@ -200,12 +203,17 @@ func caseRun(ctx context.Context, o GlobalOptions, args []string, stdout, stderr
 		Script:   "run_case.sh",
 		Args:     cmdArgs,
 		Requires: []string{"case"},
-		Config:   rt.engineConfig(),
+		Config:   rt.stageConfig(keepCluster),
 		Timeout:  rt.timeout(),
 	})
-	code := rt.Agg.Result()
-	rt.Exec.Finish(code)
-	rt.finish() // close the run transcript after the last event
+	var code exitcode.Code
+	if dryRun {
+		code = rt.Agg.Result()
+		rt.Exec.Finish(code)
+		rt.finish()
+	} else {
+		code, _ = rt.settle(keepCluster, stderr)
+	}
 
 	doc := caseRunDoc{
 		Exit: code.Int(), RunID: rt.Norm.RunID, Case: c.Name,
